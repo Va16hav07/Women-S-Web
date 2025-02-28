@@ -367,7 +367,7 @@ const Contact: React.FC = () => {
         </div>
       </section>
 
-      {/* Chatbot */}
+      {/* Chatbot - Improved UI */}
       <div className="fixed bottom-6 right-6 z-50">
         <button
           onClick={toggleChatbot}
@@ -383,49 +383,104 @@ const Contact: React.FC = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ duration: 0.3 }}
-            className="absolute bottom-20 right-0 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-xl overflow-hidden"
+            className="absolute bottom-20 right-0 w-96 bg-white dark:bg-gray-800 rounded-lg shadow-xl overflow-hidden border border-gray-200 dark:border-gray-700"
           >
-            <div className="bg-pink-600 text-white p-4">
+            {/* Chatbot Header */}
+            <div className="bg-gradient-to-r from-pink-600 to-indigo-600 text-white p-4">
               <div className="flex justify-between items-center">
-                <h3 className="font-medium">SafeGuardian AI Assistant</h3>
-                <button onClick={toggleChatbot} className="text-white hover:text-gray-200">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                    <MessageSquare size={18} />
+                  </div>
+                  <h3 className="font-medium">SafeGuardian AI Assistant</h3>
+                </div>
+                <button 
+                  onClick={toggleChatbot} 
+                  className="text-white hover:text-gray-200 p-1 rounded-full hover:bg-white/20 transition-colors"
+                >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                   </svg>
                 </button>
               </div>
             </div>
-            <div ref={chatContainerRef} className="p-4 h-80 overflow-y-auto">
+            
+            {/* Chatbot Messages */}
+            <div 
+              ref={chatContainerRef} 
+              className="p-4 h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600"
+            >
+              {/* Welcome Message with Icon */}
+              <div className="flex items-center mb-6">
+                <div className="w-10 h-10 rounded-full bg-pink-100 dark:bg-pink-900/30 flex items-center justify-center mr-3">
+                  <MessageSquare size={20} className="text-pink-600" />
+                </div>
+                <div className="text-sm font-medium">
+                  How can I assist you today with SafeGuardian?
+                </div>
+              </div>
+              
               {chatMessages.map((msg, index) => (
-                <div key={index} className={`mb-4 ${msg.role === 'user' ? 'flex justify-end' : ''}`}>
+                <div 
+                  key={index} 
+                  className={`mb-4 ${msg.role === 'user' ? 'flex flex-row-reverse' : 'flex'}`}
+                >
+                  {/* Avatar for user or assistant */}
+                  <div className={`flex-shrink-0 ${msg.role === 'user' ? 'ml-3' : 'mr-3'}`}>
+                    <div 
+                      className={`w-8 h-8 rounded-full flex items-center justify-center
+                      ${msg.role === 'user' 
+                        ? 'bg-indigo-100 dark:bg-indigo-900/30' 
+                        : 'bg-pink-100 dark:bg-pink-900/30'}`}
+                    >
+                      {msg.role === 'user' 
+                        ? <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                          </svg>
+                        : <MessageSquare size={16} className="text-pink-600" />
+                      }
+                    </div>
+                  </div>
+                  
+                  {/* Message bubble */}
                   <div 
-                    className={`p-3 rounded-lg inline-block max-w-[85%] ${
-                      msg.role === 'user' 
-                        ? 'bg-gray-100 dark:bg-gray-700' 
-                        : 'bg-pink-100 dark:bg-pink-900/30'
-                    }`}
+                    className={`rounded-lg px-4 py-2 max-w-[75%] shadow-sm
+                      ${msg.role === 'user' 
+                        ? 'bg-indigo-50 dark:bg-indigo-900/20 text-right' 
+                        : 'bg-white dark:bg-gray-700'
+                      } border ${msg.role === 'user' 
+                        ? 'border-indigo-100 dark:border-indigo-800/30' 
+                        : 'border-gray-100 dark:border-gray-600'}`
+                    }
                   >
                     <p className="text-sm">{msg.content}</p>
-                    <span className="text-xs text-gray-500 mt-1 block text-right">
+                    <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 block text-right">
                       {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
                 </div>
               ))}
+              
+              {/* Loading indicator */}
               {isLoading && (
-                <div className="flex justify-start mb-4">
-                  <div className="bg-pink-100 dark:bg-pink-900/30 p-3 rounded-lg">
-                    <div className="flex space-x-2">
-                      <div className="w-2 h-2 bg-pink-600 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-pink-600 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                      <div className="w-2 h-2 bg-pink-600 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                <div className="flex mb-4">
+                  <div className="w-8 h-8 rounded-full bg-pink-100 dark:bg-pink-900/30 flex items-center justify-center mr-3">
+                    <MessageSquare size={16} className="text-pink-600" />
+                  </div>
+                  <div className="bg-white dark:bg-gray-700 px-4 py-3 rounded-lg border border-gray-100 dark:border-gray-600">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-pink-600 rounded-full animate-pulse"></div>
+                      <div className="w-2 h-2 bg-pink-600 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                      <div className="w-2 h-2 bg-pink-600 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
                     </div>
                   </div>
                 </div>
               )}
             </div>
-            <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-              <div className="flex items-center">
+            
+            {/* Chatbot Input */}
+            <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+              <div className="flex items-center rounded-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 px-2">
                 <input
                   type="text"
                   placeholder="Type your message..."
@@ -433,15 +488,18 @@ const Contact: React.FC = () => {
                   onChange={handleChatInputChange}
                   onKeyPress={handleKeyPress}
                   disabled={isLoading}
-                  className="flex-grow px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-l-md focus:ring-2 focus:ring-pink-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className="flex-grow px-3 py-2 bg-transparent border-none focus:ring-0 focus:outline-none text-sm"
                 />
                 <button 
                   onClick={sendMessage}
                   disabled={isLoading || !chatInput.trim()}
-                  className={`${isLoading ? 'bg-gray-400' : 'bg-pink-600 hover:bg-pink-700'} text-white px-4 py-2 rounded-r-md transition-colors`}
+                  className={`p-2 rounded-full ${isLoading ? 'text-gray-400' : 'text-pink-600 hover:bg-pink-50 dark:hover:bg-pink-900/20'} transition-colors`}
                 >
                   <Send size={18} />
                 </button>
+              </div>
+              <div className="mt-2 text-xs text-center text-gray-500 dark:text-gray-400">
+                Powered by OpenAI • AI responses may not be 100% accurate
               </div>
             </div>
           </motion.div>
