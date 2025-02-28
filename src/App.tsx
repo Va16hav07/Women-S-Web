@@ -7,10 +7,10 @@ import Home from './pages/Home';
 import Features from './pages/Features';
 import HowItWorks from './pages/HowItWorks';
 import Contact from './pages/Contact';
-import Login from './pages/login';  // ✅ Fixed import (was SignIn)
+import Login from './pages/signin';  // ✅ Fixed import (was SignIn)
 import Signup from './pages/signup'; // ✅ Fixed import (was SignUp)
 import ScrollToTop from './components/ScrollToTop';
-import Dashboard from './dashboard';
+import Dashboard from './Dashboard';
 
 function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');

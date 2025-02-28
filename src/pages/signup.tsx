@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { User, Mail, Lock, Shield, Phone, CheckCircle, Eye, EyeOff } from 'lucide-react';
 import Button from '../components/Button';
 import AnimatedSection from '../components/AnimatedSection';
@@ -74,7 +73,7 @@ const Register: React.FC = () => {
                       value={formData.firstName}
                       onChange={handleChange}
                       className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
-                      placeholder="Jane"
+                      placeholder="Enter Your First Name"
                     />
                   </div>
                 </div>
@@ -95,7 +94,7 @@ const Register: React.FC = () => {
                       value={formData.lastName}
                       onChange={handleChange}
                       className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
-                      placeholder="Doe"
+                      placeholder="Enter Your Lastname"
                     />
                   </div>
                 </div>
@@ -117,7 +116,7 @@ const Register: React.FC = () => {
                       value={formData.email}
                       onChange={handleChange}
                       className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
-                      placeholder="your@email.com"
+                      placeholder="Enter Your Email"
                     />
                   </div>
                 </div>
@@ -139,7 +138,7 @@ const Register: React.FC = () => {
                       value={formData.phone}
                       onChange={handleChange}
                       className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
-                      placeholder="(123) 456-7890"
+                      placeholder="Enter Your Number"
                     />
                   </div>
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">

@@ -196,7 +196,7 @@ const Contact: React.FC = () => {
                 Mon-Fri from 8am to 5pm
               </p>
               <a href="tel:+15551234567" className="text-pink-600 hover:text-pink-700 transition-colors">
-                +1 (555) 123-4567
+                +91 7815841526
               </a>
             </AnimatedSection>
 
@@ -211,7 +211,7 @@ const Contact: React.FC = () => {
                 Come say hello at our office
               </p>
               <p className="text-pink-600">
-                123 Safety Street, Secure City, SC 12345
+                Polaris School of Technology
               </p>
             </AnimatedSection>
           </div>
