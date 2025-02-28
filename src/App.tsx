@@ -6,7 +6,6 @@ import Footer from './components/Footer';
 import Home from './pages/Home';
 import Features from './pages/Features';
 import HowItWorks from './pages/HowItWorks';
-import Technology from './pages/Technology';
 import Contact from './pages/Contact';
 import Login from './pages/login';  // ✅ Fixed import (was SignIn)
 import Signup from './pages/signup'; // ✅ Fixed import (was SignUp)
@@ -49,7 +48,6 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/features" element={<Features />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
-              <Route path="/technology" element={<Technology />} />
               <Route path="/contact" element={<Contact />} />
               <Route path="/sign-in" element={<Login />} />  {/* ✅ Fixed route */}
               <Route path="/sign-up" element={<Signup />} />  {/* ✅ Fixed route */}
