@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Shield, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import Button from '../components/Button';
 import AnimatedSection from '../components/AnimatedSection';
@@ -10,11 +9,33 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle login logic here
-    console.log('Login attempt', { email, password, rememberMe });
+    setError('');
+
+    try {
+      const response = await fetch('http://localhost:5001/signin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) throw new Error(data.message || 'Login failed');
+
+      // Store token (modify as needed)
+      localStorage.setItem('token', data.token);
+      
+      // Redirect to dashboard or home
+      navigate('/dashboard');
+
+    } catch (err: any) {
+      setError(err.message);
+    }
   };
 
   return (
@@ -39,6 +60,8 @@ const Login: React.FC = () => {
 
         <AnimatedSection delay={0.1}>
           <div className="bg-white dark:bg-gray-800 py-8 px-6 shadow rounded-lg">
+            {error && <p className="text-red-500 text-sm">{error}</p>}
+
             <form className="space-y-6" onSubmit={handleSubmit}>
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">

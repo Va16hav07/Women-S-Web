@@ -25,10 +25,27 @@ const Register: React.FC = () => {
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle registration logic here
-    console.log('Registration attempt', formData);
+  
+    try {
+      const response = await fetch("http://localhost:5000/signup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      });
+  
+      const data = await response.json();
+      if (response.ok) {
+        alert("Signup successful!");
+      } else {
+        alert(data.message || "Signup failed");
+      }
+    } catch (error) {
+      alert("Error during signup");
+    }
   };
 
   const passwordMatch = formData.password === formData.confirmPassword;
