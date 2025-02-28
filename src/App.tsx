@@ -11,6 +11,7 @@ import Login from './pages/signin';  // ✅ Fixed import (was SignIn)
 import Signup from './pages/signup'; // ✅ Fixed import (was SignUp)
 import ScrollToTop from './components/ScrollToTop';
 import Dashboard from './pages/Dashboard';
+import ProfileSettings from './pages/ProfileSettings'; // Ensure the file exists at this path or update the path
 
 function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
@@ -52,7 +53,7 @@ function App() {
               <Route path="/sign-in" element={<Login />} />  {/* ✅ Fixed route */}
               <Route path="/sign-up" element={<Signup />} />  {/* ✅ Fixed route */}
               <Route path="/dashboard" element={<Dashboard />} />
-              
+              <Route path="/profile-settings" element={<ProfileSettings />} />
             </Routes>
           </AnimatePresence>
         </main>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, MouseEvent } from "react";
+import { useState, useEffect, MouseEvent } from "react";
 import {
   Menu, User, LogOut, AlertCircle, Home, Phone, Clock,
   Bell, Users, MapPin, Settings, HelpCircle, Share, Shield,
@@ -9,6 +9,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { LatLngExpression } from 'leaflet';
 import { overpass } from 'overpass-ts';
 import RouteLayer from "../components/RouteLayer";
+import { Link } from "react-router-dom";
 
 // Define the OverpassApi class type
 interface OverpassApiOptions {
@@ -315,7 +316,10 @@ const Dashboard = () => {
                     </div>
                   </div>
                   <div className="p-2">
-                    {["Profile Settings", "Privacy Settings", "Notification Preferences"].map((item, index) => (
+                    <Link to="/profile-settings" className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}>
+                      Profile Settings
+                    </Link>
+                    {["Privacy Settings", "Notification Preferences"].map((item, index) => (
                       <button 
                         key={index} 
                         className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}

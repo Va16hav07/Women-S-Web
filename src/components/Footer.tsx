@@ -1,4 +1,4 @@
-import React from 'react';
+import { act } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Shield, Facebook, Twitter, Instagram, Linkedin, Mail, Phone, MapPin } from 'lucide-react';
 
@@ -6,7 +6,7 @@ const Footer: React.FC = () => {
   const location = useLocation();
 
   // Hide Footer on Dashboard pages
-  if (location.pathname.startsWith('/dashboard')) {
+  if (location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/pages/profile-settings')) {
     return null;
   }
 
