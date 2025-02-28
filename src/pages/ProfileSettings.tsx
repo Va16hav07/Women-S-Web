@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { User, Mail, Lock, Save, Menu, Shield, HelpCircle, LogOut, Clock } from "lucide-react";
+import { User, Mail, Lock, Save, Shield, HelpCircle, LogOut, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const ProfileSettings = () => {
@@ -56,13 +56,8 @@ const ProfileSettings = () => {
       <header className={`sticky top-0 z-30 ${darkMode ? "bg-gray-800/90" : "bg-white/90"} backdrop-blur-md border-b ${darkMode ? "border-gray-700" : "border-gray-200"} shadow-sm`}>
         <div className="flex items-center justify-between p-4 max-w-7xl mx-auto">
           <div className="flex items-center">
-            <button 
-              className={`p-2 rounded-full ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-200"} transition-colors duration-200`}
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            >
-              <Menu className="h-6 w-6" />
-            </button>
-            <h1 className="text-xl font-bold ml-4 flex items-center">
+            {/* Removed the Menu button/sidebar opening icon */}
+            <h1 className="text-xl font-bold flex items-center">
               <Shield className={`h-5 w-5 mr-2 ${darkMode ? "text-pink-400" : "text-pink-600"}`} />
               <span className="bg-gradient-to-r from-pink-500 to-purple-600 bg-clip-text text-transparent">
                 SafeHer
@@ -96,7 +91,6 @@ const ProfileSettings = () => {
               {/* User Dropdown */}
               {userDropdown && (
                 <div className={`absolute right-0 mt-2 w-48 rounded-xl ${darkMode ? "bg-gray-800" : "bg-white"} shadow-lg py-1 border ${darkMode ? "border-gray-700" : "border-gray-200"}`}>
-                  <Link to="/profile" className={`block px-4 py-2 text-sm ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"}`}>Profile Settings</Link>
                   <button onClick={handleSignOut} className={`block w-full text-left px-4 py-2 text-sm ${darkMode ? "hover:bg-gray-700 text-red-400" : "hover:bg-gray-100 text-red-600"}`}>
                     <LogOut className="h-4 w-4 inline mr-2" />
                     Sign Out
