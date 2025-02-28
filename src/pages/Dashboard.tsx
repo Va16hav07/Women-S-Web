@@ -10,6 +10,8 @@ import { LatLngExpression } from 'leaflet';
 import { overpass } from 'overpass-ts';
 import RouteLayer from "../components/RouteLayer";
 import { Link } from "react-router-dom";
+import { useContacts } from '../hooks/useContacts';
+import ContactsList from '../components/ContactsList';
 
 // Define the OverpassApi class type
 interface OverpassApiOptions {
@@ -41,15 +43,6 @@ const Dashboard = () => {
   const [routeDisplayed, setRouteDisplayed] = useState<boolean | "loading">(false);
   const [showNotification, setShowNotification] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
-  const [contacts, setContacts] = useState<Array<{
-    id: number;
-    name: string;
-    phone: string;
-    priority: Priority;
-  }>>([
-    { id: 1, name: "Police", phone: "100", priority: "high" },
-    { id: 2, name: "Women Helpline", phone: "7827170170", priority: "high" },
-  ]);
   const [newContact, setNewContact] = useState<{
     name: string;
     phone: string;
@@ -65,6 +58,7 @@ const Dashboard = () => {
     type: string;
   }>>([]);
   const [userLocation, setUserLocation] = useState<LatLngExpression | null>(null);
+  const { contacts, addContact, deleteContact } = useContacts();
   
   // Update time every minute
   useEffect(() => {
@@ -111,20 +105,6 @@ const Dashboard = () => {
     // Example: Redirect to login page
     window.location.href = "/login";
   }
-
-  const addContact = () => {
-    if (newContact.name.trim() === "" || newContact.phone.trim() === "") {
-      alert("Please enter both name and phone number");
-      return;
-    }
-    
-    const newId = contacts.length > 0 ? Math.max(...contacts.map(c => c.id)) + 1 : 1;
-    setContacts([...contacts, { ...newContact, id: newId }]);
-  };
-  
-  const deleteContact = (id: number) => {
-    setContacts(contacts.filter(contact => contact.id !== id));
-  };
 
   const sendAlert = (id: number) => {
     setAlertSent(id);
@@ -225,22 +205,23 @@ const Dashboard = () => {
           </button>
           
           {[
-            { icon: <Phone className="h-5 w-5" />, label: "Emergency Contacts" },
-            { icon: <Clock className="h-5 w-5" />, label: "Safety Timer" },
-            { icon: <Share className="h-5 w-5" />, label: "Secure Sharing" },
-            { icon: <AlertTriangle className="h-5 w-5" />, label: "Danger Zones" },
-            { icon: <Users className="h-5 w-5" />, label: "Be a Nearby Responder" },
-            { icon: <Settings className="h-5 w-5" />, label: "Settings" }
+            { icon: <Phone className="h-5 w-5" />, label: "Emergency Contacts", path: "/emergency-contacts" },
+            { icon: <Clock className="h-5 w-5" />, label: "Safety Timer", path: "/safety-timer" },
+            { icon: <Share className="h-5 w-5" />, label: "Secure Sharing", path: "/secure-sharing" },
+            { icon: <AlertTriangle className="h-5 w-5" />, label: "Danger Zones", path: "/danger-zones" },
+            { icon: <Users className="h-5 w-5" />, label: "Be a Nearby Responder", path: "/responder" },
+            { icon: <Settings className="h-5 w-5" />, label: "Settings", path: "/settings" }
           ].map((item, index) => (
-            <button 
+            <Link 
               key={index}
+              to={item.path}
               className={`flex items-center space-x-3 p-3 rounded-lg transition-all duration-200 transform hover:translate-x-2 ${darkMode ? "hover:bg-gray-700/70" : "hover:bg-gray-100"}`}
               style={{ animationDelay: `${index * 100}ms` }}
             >
               {item.icon}
               <span>{item.label}</span>
               <ChevronRight className="h-4 w-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
-            </button>
+            </Link>
           ))}
         </nav>
         
@@ -338,15 +319,25 @@ const Dashboard = () => {
                     <Link to="/profile-settings" className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}>
                       Profile Settings
                     </Link>
-                    {["Privacy Settings", "Notification Preferences"].map((item, index) => (
-                      <button 
-                        key={index} 
-                        className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}
-                        style={{ animationDelay: `${index * 50}ms` }}
-                      >
-                        {item}
-                      </button>
-                    ))}
+                    {/* Replace the non-clickable button with a Link */}
+                    <Link 
+                      to="/notification-settings" 
+                      className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}
+                    >
+                      <div className="flex items-center">
+                        <Bell className="h-5 w-5 mr-2" />
+                        Notification Preferences
+                      </div>
+                    </Link>
+                    <Link 
+                      to="/privacy-settings" 
+                      className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}
+                    >
+                      <div className="flex items-center">
+                        <Shield className="h-5 w-5 mr-2" />
+                        Privacy Settings
+                      </div>
+                    </Link>
                     <button className={`flex items-center w-full p-3 mt-2 text-left rounded-lg text-red-600 ${darkMode ? "hover:bg-red-900/30" : "hover:bg-red-100"} transition-colors duration-200`}>
                       <LogOut className="h-5 w-5 mr-2" /> Sign Out
                     </button>
@@ -508,159 +499,29 @@ const Dashboard = () => {
           </div>
           
           {/* Emergency Contacts Section */}
-          <div className={`${darkMode ? "bg-gray-800" : "bg-white"} rounded-2xl shadow-xl p-6 transform transition-all duration-300 hover:shadow-2xl`}>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold flex items-center">
-                <Phone className={`h-5 w-5 mr-2 ${darkMode ? "text-pink-400" : "text-pink-600"}`} />
-                Emergency Contacts
-              </h2>
-              <button
-                onClick={() => setShowAddContact(!showAddContact)}
-                className={`${darkMode ? "bg-pink-600 hover:bg-pink-700" : "bg-pink-500 hover:bg-pink-600"} text-white p-2 rounded-full shadow-md transform transition-all duration-300 hover:scale-110 flex items-center justify-center`}
-              >
-                {showAddContact ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
-              </button>
-            </div>
-            
-            {/* Add Contact Form with Animation */}
-            {showAddContact && (
-              <div className={`mb-6 p-4 rounded-xl ${darkMode ? "bg-gray-700" : "bg-pink-50"} animate-fadeIn`}>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Contact Name"
-                      className={`w-full p-3 rounded-lg border ${darkMode ? "border-gray-600 bg-gray-600 focus:bg-gray-600" : "border-pink-200 bg-white"} focus:ring-2 focus:ring-pink-500 focus:border-pink-500`}
-                      value={newContact.name}
-                      onChange={(e) => setNewContact({...newContact, name: e.target.value})}
-                    />
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Phone Number"
-                      className={`w-full p-3 rounded-lg border ${darkMode ? "border-gray-600 bg-gray-600 focus:bg-gray-600" : "border-pink-200 bg-white"} focus:ring-2 focus:ring-pink-500 focus:border-pink-500`}
-                      value={newContact.phone}
-                      onChange={(e) => setNewContact({...newContact, phone: e.target.value})}
-                    />
-                  </div>
-                  <div className="flex space-x-2">
-                    <select
-                      className={`flex-1 p-3 rounded-lg border ${darkMode ? "border-gray-600 bg-gray-600" : "border-pink-200 bg-white"}`}
-                      value={newContact.priority}
-                      onChange={(e) => setNewContact({...newContact, priority: e.target.value as Priority})}
-                    >
-                      <option value="high">High Priority</option>
-                      <option value="medium">Medium Priority</option>
-                      <option value="low">Low Priority</option>
-                    </select>
-                    <button
-                      onClick={addContact}
-                      className={`px-4 py-2 ${darkMode ? "bg-gradient-to-r from-pink-600 to-purple-700" : "bg-gradient-to-r from-pink-500 to-purple-600"} text-white rounded-lg shadow-md hover:shadow-lg transition-all duration-300`}
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* Contact List with Enhanced UI */}
-            <div className={`overflow-hidden rounded-xl ${contacts.length === 0 ? "border-2 border-dashed border-gray-300 dark:border-gray-700 p-8 flex flex-col items-center justify-center" : ""}`}>
-              {contacts.length === 0 ? (
-                <div className="text-center">
-                  <Phone className={`h-12 w-12 mx-auto mb-4 ${darkMode ? "text-gray-600" : "text-gray-400"}`} />
-                  <p className="text-gray-500 dark:text-gray-400 mb-4">No emergency contacts added yet</p>
-                  <button
-                    onClick={() => setShowAddContact(true)}
-                    className={`px-4 py-2 ${darkMode ? "bg-pink-600 hover:bg-pink-700" : "bg-pink-500 hover:bg-pink-600"} text-white rounded-lg shadow-md hover:shadow-lg transition-all duration-300`}
-                  >
-                    Add Your First Contact
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {contacts.map((contact, index) => (
-                    <div 
-                      key={contact.id}
-                      className={`p-4 rounded-xl ${darkMode ? "bg-gray-700" : "bg-white"} border ${darkMode ? "border-gray-600" : "border-gray-200"} shadow-sm transform transition-all duration-300 hover:shadow-md hover:scale-[1.01] ${
-                        contact.priority === 'high' 
-                          ? 'border-l-4 border-l-red-500' 
-                          : contact.priority === 'medium'
-                            ? 'border-l-4 border-l-yellow-500'
-                            : 'border-l-4 border-l-green-500'
-                      }`}
-                      style={{ animationDelay: `${index * 100}ms` }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <div className={`w-10 h-10 rounded-full ${
-                            contact.priority === 'high' 
-                              ? 'bg-red-100 dark:bg-red-900/30' 
-                              : contact.priority === 'medium'
-                                ? 'bg-yellow-100 dark:bg-yellow-900/30'
-                                : 'bg-green-100 dark:bg-green-900/30'
-                          } flex items-center justify-center mr-3`}>
-                            <Phone className={`h-5 w-5 ${
-                              contact.priority === 'high' 
-                                ? 'text-red-600 dark:text-red-400' 
-                                : contact.priority === 'medium'
-                                  ? 'text-yellow-600 dark:text-yellow-400'
-                                  : 'text-green-600 dark:text-green-400'
-                            }`} />
-                          </div>
-                          <div>
-                            <p className="font-medium">{contact.name}</p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{contact.phone}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          {alertSent === contact.id ? (
-                            <div className="flex items-center text-green-500 animate-pulse">
-                              <CheckCircle className="h-5 w-5 mr-1" />
-                              <span className="text-sm">Alert sent!</span>
-                            </div>
-                          ) : (
-                            <>
-                              <button
-                                onClick={() => sendAlert(contact.id)}
-                                className={`p-2 rounded-lg ${darkMode ? "bg-pink-900/40 text-pink-100 hover:bg-pink-800/60" : "bg-pink-100 text-pink-800 hover:bg-pink-200"} transition-all duration-200`}
-                              >
-                                <Send className="h-4 w-4" />
-                              </button>
-                                                            <button
-                                                              onClick={() => deleteContact(contact.id)}
-                                                              className={`p-2 rounded-lg ${darkMode ? "bg-red-900/40 text-red-100 hover:bg-red-800/60" : "bg-red-100 text-red-800 hover:bg-red-200"} transition-all duration-200`}
-                                                            >
-                                                              <Trash2 className="h-4 w-4" />
-                                                            </button>
-                                                          </>
-                                                        )}
-                                                      </div>
-                                                    </div>
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
-                                        
-                                        {/* SOS Button */}
-                                        <div className="fixed bottom-6 right-6 z-30">
-                                          <button
-                                            id="sos-button"
-                                            onClick={handleSOS}
-                                            className={`w-16 h-16 md:w-20 md:h-20 rounded-full ${darkMode ? "bg-red-600" : "bg-red-500"} text-white font-bold flex items-center justify-center shadow-lg transform transition-all duration-300 hover:scale-110 animate-pulse hover:animate-none`}
-                                            style={{ boxShadow: "0 0 0 rgba(255, 99, 71, 0.4), 0 0 20px rgba(255, 99, 71, 0.4)" }}
-                                          >
-                                            <AlertCircle className="h-8 w-8 md:h-10 md:w-10" />
-                                            <span className="sr-only">Emergency SOS</span>
-                                          </button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              };
-                              
-                              export default Dashboard;
+          <ContactsList
+            contacts={contacts}
+            onAdd={addContact}
+            onDelete={deleteContact}
+            darkMode={darkMode}
+          />
+          
+          {/* SOS Button */}
+          <div className="fixed bottom-6 right-6 z-30">
+            <button
+              id="sos-button"
+              onClick={handleSOS}
+              className={`w-16 h-16 md:w-20 md:h-20 rounded-full ${darkMode ? "bg-red-600" : "bg-red-500"} text-white font-bold flex items-center justify-center shadow-lg transform transition-all duration-300 hover:scale-110 animate-pulse hover:animate-none`}
+              style={{ boxShadow: "0 0 0 rgba(255, 99, 71, 0.4), 0 0 20px rgba(255, 99, 71, 0.4)" }}
+            >
+              <AlertCircle className="h-8 w-8 md:h-10 md:w-10" />
+              <span className="sr-only">Emergency SOS</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard;

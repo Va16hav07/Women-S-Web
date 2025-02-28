@@ -16,6 +16,12 @@ import ScrollToTop from "./components/ScrollToTop";
 import Logout from "./pages/logout";
 import { User } from "firebase/auth";
 
+import DangerZones from './pages/DangerZones';
+import PrivacySettings from './pages/PrivacySettings';
+import NotificationSettings from './pages/NotificationSettings';
+import EmergencyContacts from './pages/EmergencyContacts';
+
+
 const App = () => {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [user, setUser] = useState<User | null>(null); // 🔥 Stores logged-in user
@@ -68,18 +74,14 @@ const App = () => {
               <Route path="/features" element={<Features />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
               <Route path="/contact" element={<Contact />} />
-              <Route path="/sign-in" element={<Login />} />
-              <Route path="/sign-up" element={<Signup />} />
-              
-              {/* 🔥 Protected Route for Dashboard */}
-              <Route 
-                path="/dashboard" 
-                element={<ProtectedRoute><Dashboard /></ProtectedRoute>} 
-              />
-              <Route 
-                path="/profile-settings" 
-                element={<ProtectedRoute><ProfileSettings /></ProtectedRoute>} 
-              />
+              <Route path="/sign-in" element={<Login />} />  {/* ✅ Fixed route */}
+              <Route path="/sign-up" element={<Signup />} />  {/* ✅ Fixed route */}
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/profile-settings" element={<ProfileSettings />} />
+              <Route path="/danger-zones" element={<DangerZones />} />
+              <Route path="/privacy-settings" element={<PrivacySettings />} />
+              <Route path="/notification-settings" element={<NotificationSettings />} />
+              <Route path="/emergency-contacts" element={<EmergencyContacts />} />
             </Routes>
           </AnimatePresence>
         </main>
