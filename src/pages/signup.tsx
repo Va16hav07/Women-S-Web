@@ -29,7 +29,7 @@ const Register: React.FC = () => {
     e.preventDefault();
   
     try {
-      const response = await fetch("http://localhost:5000/signup", {
+      const response = await fetch("http://localhost:6000/signup", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -44,7 +44,8 @@ const Register: React.FC = () => {
         alert(data.message || "Signup failed");
       }
     } catch (error) {
-      alert("Error during signup");
+      console.error("Error during signup:", error);
+      alert(`Error during signup: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   };
 
