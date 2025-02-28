@@ -77,7 +77,21 @@ const Navbar: React.FC<NavbarProps> = ({ theme, toggleTheme }) => {
             ))}
           </nav>
 
+          {/* Right Side - Theme Toggle & Auth Buttons */}
           <div className="flex items-center space-x-4">
+            {/* Sign In & Sign Up Buttons */}
+            <Link to="/sign-in">
+              <button className="border border-pink-600 text-pink-600 px-4 py-2 rounded-lg hover:bg-pink-100 transition">
+                Sign In
+              </button>
+            </Link>
+
+            <Link to="/sign-up">
+              <button className="bg-pink-600 text-white px-4 py-2 rounded-lg hover:bg-pink-700 transition">
+                Sign Up
+              </button>
+            </Link>
+
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
@@ -131,6 +145,19 @@ const Navbar: React.FC<NavbarProps> = ({ theme, toggleTheme }) => {
                   {link.name}
                 </Link>
               ))}
+
+              {/* Sign In & Sign Up for Mobile */}
+              <Link to="/sign-in">
+                <button className="border border-pink-600 text-pink-600 w-full px-4 py-2 rounded-lg hover:bg-pink-100 transition">
+                  Sign In
+                </button>
+              </Link>
+
+              <Link to="/sign-up">
+                <button className="bg-pink-600 text-white w-full px-4 py-2 rounded-lg hover:bg-pink-700 transition">
+                  Sign Up
+                </button>
+              </Link>
             </nav>
           </div>
         </motion.div>

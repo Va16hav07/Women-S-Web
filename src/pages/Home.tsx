@@ -218,38 +218,6 @@ const Home: React.FC = () => {
           </div>
         </div>
       </section>
-
-      {/* CTA Section */}
-      <section className="py-16 bg-gradient-to-r from-pink-600 to-indigo-600 text-white">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col lg:flex-row items-center justify-between">
-            <AnimatedSection className="lg:w-2/3 mb-8 lg:mb-0">
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">Ready to Feel Safer?</h2>
-              <p className="text-lg opacity-90 max-w-2xl">
-                Join thousands of women who have taken control of their safety with our innovative alert system. Download now and experience peace of mind.
-              </p>
-            </AnimatedSection>
-            <AnimatedSection direction="left" className="flex flex-col sm:flex-row gap-4">
-              <Button 
-                variant="primary" 
-                size="lg"
-                className="bg-white text-pink-600 hover:bg-gray-100"
-              >
-                Download App
-              </Button>
-              <Link to="/contact">
-                <Button 
-                  variant="outline" 
-                  size="lg"
-                  className="border-white text-white hover:bg-white/10"
-                >
-                  Contact Us
-                </Button>
-              </Link>
-            </AnimatedSection>
-          </div>
-        </div>
-      </section>
     </div>
   );
 };
