@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Mail, Phone, MapPin, Send, MessageSquare } from 'lucide-react';
 import AnimatedSection from '../components/AnimatedSection';
 import Button from '../components/Button';
+
+// Define message type
+interface ChatMessage {
+  content: string;
+  role: 'user' | 'assistant';
+  timestamp: Date;
+}
 
 const Contact: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -13,6 +20,24 @@ const Contact: React.FC = () => {
   });
 
   const [showChatbot, setShowChatbot] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      role: 'assistant',
+      content: 'Hello! How can I help you today with SafeGuardian?',
+      timestamp: new Date()
+    }
+  ]);
+  
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom of chat when messages change
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [chatMessages]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -33,6 +58,86 @@ const Contact: React.FC = () => {
 
   const toggleChatbot = () => {
     setShowChatbot(!showChatbot);
+  };
+
+  const handleChatInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setChatInput(e.target.value);
+  };
+
+  const sendMessage = async () => {
+    if (!chatInput.trim()) return;
+    
+    // Add user message to chat
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: chatInput,
+      timestamp: new Date()
+    };
+    
+    setChatMessages(prev => [...prev, userMessage]);
+    setChatInput('');
+    setIsLoading(true);
+    
+    try {
+      // Call OpenAI API
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_OPENAI_API_KEY || process.env.REACT_APP_OPENAI_API_KEY}` 
+        },
+        body: JSON.stringify({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a helpful assistant for SafeGuardian, a women safety app. Provide concise, helpful responses about our services, safety features, and app functionality. Be empathetic and supportive.'
+            },
+            ...chatMessages.map(msg => ({
+              role: msg.role,
+              content: msg.content
+            })),
+            {
+              role: 'user',
+              content: chatInput
+            }
+          ],
+          max_tokens: 150
+        })
+      });
+      
+      const data = await response.json();
+      
+      // Add AI response to chat
+      if (data.choices && data.choices[0] && data.choices[0].message) {
+        const aiMessage: ChatMessage = {
+          role: 'assistant',
+          content: data.choices[0].message.content,
+          timestamp: new Date()
+        };
+        
+        setChatMessages(prev => [...prev, aiMessage]);
+      }
+    } catch (error) {
+      console.error('Error calling OpenAI:', error);
+      
+      // Add error message
+      const errorMessage: ChatMessage = {
+        role: 'assistant',
+        content: 'Sorry, I encountered an error. Please try again later.',
+        timestamp: new Date()
+      };
+      
+      setChatMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !isLoading) {
+      sendMessage();
+    }
   };
 
   return (
@@ -282,7 +387,7 @@ const Contact: React.FC = () => {
           >
             <div className="bg-pink-600 text-white p-4">
               <div className="flex justify-between items-center">
-                <h3 className="font-medium">SafeGuardian Support</h3>
+                <h3 className="font-medium">SafeGuardian AI Assistant</h3>
                 <button onClick={toggleChatbot} className="text-white hover:text-gray-200">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -290,31 +395,51 @@ const Contact: React.FC = () => {
                 </button>
               </div>
             </div>
-            <div className="p-4 h-80 overflow-y-auto">
-              <div className="mb-4">
-                <div className="bg-pink-100 dark:bg-pink-900/30 p-3 rounded-lg inline-block max-w-xs">
-                  <p className="text-sm">Hello! How can I help you today with SafeGuardian?</p>
+            <div ref={chatContainerRef} className="p-4 h-80 overflow-y-auto">
+              {chatMessages.map((msg, index) => (
+                <div key={index} className={`mb-4 ${msg.role === 'user' ? 'flex justify-end' : ''}`}>
+                  <div 
+                    className={`p-3 rounded-lg inline-block max-w-[85%] ${
+                      msg.role === 'user' 
+                        ? 'bg-gray-100 dark:bg-gray-700' 
+                        : 'bg-pink-100 dark:bg-pink-900/30'
+                    }`}
+                  >
+                    <p className="text-sm">{msg.content}</p>
+                    <span className="text-xs text-gray-500 mt-1 block text-right">
+                      {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <div className="flex justify-end mb-4">
-                <div className="bg-gray-100 dark:bg-gray-700 p-3 rounded-lg inline-block max-w-xs">
-                  <p className="text-sm">I have a question about the app.</p>
+              ))}
+              {isLoading && (
+                <div className="flex justify-start mb-4">
+                  <div className="bg-pink-100 dark:bg-pink-900/30 p-3 rounded-lg">
+                    <div className="flex space-x-2">
+                      <div className="w-2 h-2 bg-pink-600 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-pink-600 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                      <div className="w-2 h-2 bg-pink-600 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="mb-4">
-                <div className="bg-pink-100 dark:bg-pink-900/30 p-3 rounded-lg inline-block max-w-xs">
-                  <p className="text-sm">Of course! What would you like to know about the SafeGuardian app?</p>
-                </div>
-              </div>
+              )}
             </div>
             <div className="p-4 border-t border-gray-200 dark:border-gray-700">
               <div className="flex items-center">
                 <input
                   type="text"
                   placeholder="Type your message..."
+                  value={chatInput}
+                  onChange={handleChatInputChange}
+                  onKeyPress={handleKeyPress}
+                  disabled={isLoading}
                   className="flex-grow px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-l-md focus:ring-2 focus:ring-pink-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                 />
-                <button className="bg-pink-600 text-white px-4 py-2 rounded-r-md hover:bg-pink-700 transition-colors">
+                <button 
+                  onClick={sendMessage}
+                  disabled={isLoading || !chatInput.trim()}
+                  className={`${isLoading ? 'bg-gray-400' : 'bg-pink-600 hover:bg-pink-700'} text-white px-4 py-2 rounded-r-md transition-colors`}
+                >
                   <Send size={18} />
                 </button>
               </div>
