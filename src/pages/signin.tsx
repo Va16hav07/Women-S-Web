@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Shield, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import Button from '../components/Button';
 import AnimatedSection from '../components/AnimatedSection';
+import { auth } from './firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -17,24 +19,15 @@ const Login: React.FC = () => {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:5001/signin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) throw new Error(data.message || 'Login failed');
-
-      // Store token (modify as needed)
-      localStorage.setItem('token', data.token);
-      
-      // Redirect to dashboard or home
-      navigate('/dashboard');
-
-    } catch (err: any) {
-      setError(err.message);
+      await signInWithEmailAndPassword(auth, email, password);
+      alert('Login successful!');
+      navigate('/dashboard'); // Redirect after login
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unknown error occurred');
+      }
     }
   };
 
