@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Menu, X, Shield, Sun, Moon } from 'lucide-react';
@@ -38,7 +38,7 @@ const Navbar: React.FC<NavbarProps> = ({ theme, toggleTheme }) => {
   }, [location]);
 
   // Hide Navbar on the Dashboard page
-  if (location.pathname.startsWith('/dashboard')) {
+if (location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/ProfileSettings')) {
     return null;
   }
 
