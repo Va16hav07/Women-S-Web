@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import Navbar from './components/Navbar';
@@ -8,13 +8,14 @@ import Features from './pages/Features';
 import HowItWorks from './pages/HowItWorks';
 import Technology from './pages/Technology';
 import Contact from './pages/Contact';
+import Login from './pages/login';  // ✅ Fixed import (was SignIn)
+import Signup from './pages/signup'; // ✅ Fixed import (was SignUp)
 import ScrollToTop from './components/ScrollToTop';
 
 function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
-    // Check for user preference
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
     if (savedTheme) {
       setTheme(savedTheme);
@@ -24,7 +25,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Apply theme to document
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
@@ -50,6 +50,8 @@ function App() {
               <Route path="/how-it-works" element={<HowItWorks />} />
               <Route path="/technology" element={<Technology />} />
               <Route path="/contact" element={<Contact />} />
+              <Route path="/sign-in" element={<Login />} />  {/* ✅ Fixed route */}
+              <Route path="/sign-up" element={<Signup />} />  {/* ✅ Fixed route */}
             </Routes>
           </AnimatePresence>
         </main>
