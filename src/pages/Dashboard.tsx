@@ -5,9 +5,31 @@ import {
   AlertTriangle, Navigation, ChevronRight, Heart, X,
   Plus, Trash2, Send, CheckCircle
 } from "lucide-react";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { LatLngExpression } from 'leaflet';
+import { overpass } from 'overpass-ts';
+import RouteLayer from "../components/RouteLayer";
+
+// Define the OverpassApi class type
+interface OverpassApiOptions {
+  endpoint: string;
+}
+
+class OverpassApi {
+  constructor(options: OverpassApiOptions) {
+    // Constructor implementation handled by the overpass-ts library
+  }
+  fetch(query: string): Promise<any> {
+    // Method implementation handled by the overpass-ts library
+    return Promise.resolve(null);
+  }
+}
 
 // Add this type definition at the top of the file
 type Priority = "high" | "medium" | "low";
+
+const DEFAULT_CENTER: LatLngExpression = [28.6139, 77.2090]; // Delhi coordinates
+const DEFAULT_ZOOM = 13;
 
 const Dashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -24,8 +46,8 @@ const Dashboard = () => {
     phone: string;
     priority: Priority;
   }>>([
-    { id: 1, name: "Sarah Johnson", phone: "555-123-4567", priority: "high" },
-    { id: 2, name: "Lisa Taylor", phone: "555-987-6543", priority: "medium" },
+    { id: 1, name: "Police", phone: "100", priority: "high" },
+    { id: 2, name: "Women Helpline", phone: "7827170170", priority: "high" },
   ]);
   const [newContact, setNewContact] = useState<{
     name: string;
@@ -34,6 +56,13 @@ const Dashboard = () => {
   }>({ name: "", phone: "", priority: "medium" });
   const [showAddContact, setShowAddContact] = useState(false);
   const [alertSent, setAlertSent] = useState<number | null>(null);
+  const [mapCenter, setMapCenter] = useState<LatLngExpression>(DEFAULT_CENTER);
+  const [safePoints, setSafePoints] = useState<Array<{
+    lat: number;
+    lon: number;
+    name: string;
+    type: string;
+  }>>([]);
   
   // Update time every minute
   useEffect(() => {
@@ -89,10 +118,8 @@ const Dashboard = () => {
     
     const newId = contacts.length > 0 ? Math.max(...contacts.map(c => c.id)) + 1 : 1;
     setContacts([...contacts, { ...newContact, id: newId }]);
-    setNewContact({ name: "", phone: "", priority: "medium" });
-    setShowAddContact(false);
   };
-
+  
   const deleteContact = (id: number) => {
     setContacts(contacts.filter(contact => contact.id !== id));
   };
@@ -103,6 +130,55 @@ const Dashboard = () => {
       setAlertSent(null);
     }, 3000);
   };
+
+  const fetchSafePoints = async (center: LatLngExpression) => {
+    const api = new OverpassApi({ endpoint: 'https://overpass-api.de/api/interpreter' });
+    
+    // Convert LatLngExpression to [lat, lng] array
+    let lat: number, lng: number;
+    if (Array.isArray(center)) {
+      [lat, lng] = center;
+    } else if (typeof center === 'object' && 'lat' in center && 'lng' in center) {
+      lat = center.lat;
+      lng = center.lng;
+    } else {
+      // Default fallback
+      [lat, lng] = DEFAULT_CENTER as [number, number];
+    }
+    
+    const query = `
+      [out:json][timeout:25];
+      (
+        node["amenity"="police"](around:5000,${lat},${lng});
+        node["amenity"="hospital"](around:5000,${lat},${lng});
+        node["amenity"="bus_station"](around:5000,${lat},${lng});
+      );
+      out body;
+      >;
+      out skel qt;
+    `;
+  
+    try {
+      const response = await api.fetch(query);
+      const points = response.elements.map((element: {
+        lat: number;
+        lon: number;
+        tags: { name?: string; amenity: string };
+      }) => ({
+        lat: element.lat,
+        lon: element.lon,
+        name: element.tags.name || 'Unnamed',
+        type: element.tags.amenity
+      }));
+      setSafePoints(points);
+    } catch (error) {
+      console.error('Error fetching safe points:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchSafePoints(mapCenter);
+  }, [mapCenter]);
 
   return (
     <div className={`relative min-h-screen ${darkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"} transition-colors duration-300`}>
@@ -294,45 +370,49 @@ const Dashboard = () => {
                 <button className={`px-3 py-1 text-xs rounded-full ${darkMode ? "bg-pink-800" : "bg-pink-100"} ${darkMode ? "text-pink-100" : "text-pink-700"}`}>Traffic</button>
               </div>
             </div>
-            <div className={`h-[60vh] ${darkMode ? "bg-gray-700" : "bg-gray-200"} flex items-center justify-center overflow-hidden relative`}>
-              {/* Map Placeholder with Animation */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div 
-                  className={`w-full h-full ${routeDisplayed === "loading" ? "animate-pulse" : ""}`}
-                  style={{
-                    background: `url('https://via.placeholder.com/600x400') center/cover`,
-                    filter: darkMode ? "grayscale(50%) brightness(0.7)" : "none",
-                    transition: "filter 0.5s ease"
-                  }}
-                >
-                </div>
+            <div className={`h-[60vh] ${darkMode ? "bg-gray-700" : "bg-gray-200"} relative overflow-hidden rounded-lg`}>
+              <MapContainer
+                center={mapCenter}
+                zoom={DEFAULT_ZOOM}
+                className="w-full h-full z-10"
+                style={{ background: darkMode ? '#1f2937' : '#f3f4f6' }}
+              >
+                <TileLayer
+                  url={darkMode 
+                    ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                    : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  }
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                />
                 
-                {/* Map Overlay Elements */}
-                {routeDisplayed === true && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-4/5 h-1 bg-pink-500/70 rounded-full animate-fadeIn" style={{ filter: "drop-shadow(0 0 8px rgba(236, 72, 153, 0.6))" }}></div>
-                  </div>
+                {safePoints.map((point, index) => (
+                  <Marker 
+                    key={index} 
+                    position={[point.lat, point.lon]}
+                  >
+                    <Popup>
+                      <div className={`p-2 ${darkMode ? "text-gray-900" : "text-gray-700"}`}>
+                        <h3 className="font-medium">{point.name}</h3>
+                        <p className="text-sm capitalize">{point.type.replace('_', ' ')}</p>
+                      </div>
+                    </Popup>
+                  </Marker>
+                ))}
+
+                {routeDisplayed === true && fromAddress && toAddress && (
+                  <RouteLayer 
+                    from={fromAddress} 
+                    to={toAddress} 
+                    darkMode={darkMode}
+                  />
                 )}
-                
-                {/* Loading Indicator */}
-                {routeDisplayed === "loading" && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm">
-                    <div className="w-12 h-12 rounded-full border-4 border-pink-200 border-t-pink-600 animate-spin"></div>
-                  </div>
-                )}
-                
-                {/* Map Info Overlay */}
-                <div className="absolute bottom-4 right-4">
-                  <div className={`${darkMode ? "bg-gray-800/90" : "bg-white/90"} backdrop-blur-sm p-3 rounded-lg shadow-lg`}>
-                    <p className="text-sm font-medium">{routeDisplayed === true ? "Route Active" : "Ready for Navigation"}</p>
-                    <p className="text-xs text-gray-500">
-                      {routeDisplayed === true 
-                        ? `${fromAddress} → ${toAddress}` 
-                        : "Enter addresses below"}
-                    </p>
-                  </div>
+              </MapContainer>
+
+              {routeDisplayed === "loading" && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-20">
+                  <div className="w-12 h-12 rounded-full border-4 border-pink-200 border-t-pink-600 animate-spin"></div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
 
