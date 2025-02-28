@@ -6,7 +6,6 @@ import Footer from './components/Footer';
 import Home from './pages/Home';
 import Features from './pages/Features';
 import HowItWorks from './pages/HowItWorks';
-import Technology from './pages/Technology';
 import Contact from './pages/Contact';
 import ScrollToTop from './components/ScrollToTop';
 
@@ -48,7 +47,6 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/features" element={<Features />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
-              <Route path="/technology" element={<Technology />} />
               <Route path="/contact" element={<Contact />} />
             </Routes>
           </AnimatePresence>

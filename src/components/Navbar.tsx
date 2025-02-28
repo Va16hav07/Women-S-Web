@@ -41,7 +41,6 @@ const Navbar: React.FC<NavbarProps> = ({ theme, toggleTheme }) => {
     { name: 'Home', path: '/' },
     { name: 'Features', path: '/features' },
     { name: 'How It Works', path: '/how-it-works' },
-    { name: 'Technology', path: '/technology' },
     { name: 'Contact', path: '/contact' },
   ];
 
