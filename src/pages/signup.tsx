@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { User, Mail, Lock, Shield, Phone, CheckCircle, Eye, EyeOff } from 'lucide-react';
 import Button from '../components/Button';
 import AnimatedSection from '../components/AnimatedSection';
+import { auth } from './firebase'; // Ensure you have a firebase.ts file for configuration
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 
 const Register: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -27,25 +29,20 @@ const Register: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (formData.password !== formData.confirmPassword) {
+      alert("Passwords do not match!");
+      return;
+    }
   
     try {
-      const response = await fetch("http://localhost:6000/signup", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
-      });
-  
-      const data = await response.json();
-      if (response.ok) {
-        alert("Signup successful!");
-      } else {
-        alert(data.message || "Signup failed");
-      }
+      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+      const user = userCredential.user;
+      console.log("User created:", user);
+      alert("Signup successful!");
     } catch (error) {
-      console.error("Error during signup:", error);
-      alert(`Error during signup: ${error instanceof Error ? error.message : "Unknown error"}`);
+      console.error("Firebase signup error:", error);
+      alert(`Signup failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   };
 

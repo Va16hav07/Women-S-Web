@@ -1,41 +1,59 @@
-import { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { AnimatePresence } from 'framer-motion';
-import Navbar from './components/Navbar';
-import Footer from './components/Footer';
-import Home from './pages/Home';
-import Features from './pages/Features';
-import HowItWorks from './pages/HowItWorks';
-import Contact from './pages/Contact';
-import Login from './pages/signin';  // ✅ Fixed import (was SignIn)
-import Signup from './pages/signup'; // ✅ Fixed import (was SignUp)
-import ScrollToTop from './components/ScrollToTop';
-import Dashboard from './pages/Dashboard';
-import ProfileSettings from './pages/ProfileSettings'; // Ensure the file exists at this path or update the path
+import React, { useEffect, useState } from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { AnimatePresence } from "framer-motion";
+import { auth } from './pages/firebase'; // 🔥 Import Firebase Auth
+import Navbar from "./components/Navbar";
+import Footer from "./components/Footer";
+import Home from "./pages/Home";
+import Features from "./pages/Features";
+import HowItWorks from "./pages/HowItWorks";
+import Contact from "./pages/Contact";
+import Login from "./pages/signin";  
+import Signup from "./pages/signup"; 
+import Dashboard from "./pages/Dashboard";
+import ProfileSettings from "./pages/ProfileSettings";
+import ScrollToTop from "./components/ScrollToTop";
+import Logout from "./pages/logout";
+import { User } from "firebase/auth";
 
-function App() {
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+const App = () => {
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [user, setUser] = useState<User | null>(null); // 🔥 Stores logged-in user
 
+  // 🔥 Track Firebase Authentication State
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
+    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe(); // Cleanup subscription
+  }, []);
+
+  // 🔥 Load Theme from Local Storage
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null;
     if (savedTheme) {
       setTheme(savedTheme);
-    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      setTheme('dark');
+    } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      setTheme("dark");
     }
   }, []);
 
   useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
     } else {
-      document.documentElement.classList.remove('dark');
+      document.documentElement.classList.remove("dark");
     }
-    localStorage.setItem('theme', theme);
+    localStorage.setItem("theme", theme);
   }, [theme]);
 
   const toggleTheme = () => {
-    setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
+    setTheme((prevTheme) => (prevTheme === "light" ? "dark" : "light"));
+  };
+
+  // 🔥 Protected Route Wrapper
+  const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+    return user ? children : <Navigate to="/sign-in" />;
   };
 
   return (
@@ -50,17 +68,34 @@ function App() {
               <Route path="/features" element={<Features />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
               <Route path="/contact" element={<Contact />} />
-              <Route path="/sign-in" element={<Login />} />  {/* ✅ Fixed route */}
-              <Route path="/sign-up" element={<Signup />} />  {/* ✅ Fixed route */}
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/profile-settings" element={<ProfileSettings />} />
+              <Route path="/sign-in" element={<Login />} />
+              <Route path="/sign-up" element={<Signup />} />
+              
+              {/* 🔥 Protected Route for Dashboard */}
+              <Route 
+                path="/dashboard" 
+                element={<ProtectedRoute><Dashboard /></ProtectedRoute>} 
+              />
+              <Route 
+                path="/profile-settings" 
+                element={<ProtectedRoute><ProfileSettings /></ProtectedRoute>} 
+              />
             </Routes>
           </AnimatePresence>
         </main>
+
+        {/* 🔥 Show Logout Button if User is Logged In */}
+        {user && (
+          <div className="text-center py-4">
+            <h2 className="text-lg font-semibold">Welcome, {user.email}</h2>
+            <Logout />
+          </div>
+        )}
+
         <Footer />
       </div>
     </Router>
   );
-}
+};
 
 export default App;
