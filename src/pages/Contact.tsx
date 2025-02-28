@@ -66,74 +66,49 @@ const Contact: React.FC = () => {
 
   const sendMessage = async () => {
     if (!chatInput.trim()) return;
-    
-    // Add user message to chat
+  
     const userMessage: ChatMessage = {
       role: 'user',
       content: chatInput,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
-    
-    setChatMessages(prev => [...prev, userMessage]);
+  
+    setChatMessages((prev) => [...prev, userMessage]);
     setChatInput('');
     setIsLoading(true);
-    
+  
     try {
-      // Call OpenAI API
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch('http://localhost:8000/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}` 
-        },
-        body: JSON.stringify({
-          model: 'gpt-3.5-turbo',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a helpful assistant for SafeGuardian, a women safety app. Provide concise, helpful responses about our services, safety features, and app functionality. Be empathetic and supportive.'
-            },
-            ...chatMessages.map(msg => ({
-              role: msg.role,
-              content: msg.content
-            })),
-            {
-              role: 'user',
-              content: chatInput
-            }
-          ],
-          max_tokens: 150
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userMessage: chatInput }),
       });
-      
+  
       const data = await response.json();
       
-      // Add AI response to chat
-      if (data.choices && data.choices[0] && data.choices[0].message) {
+      // ✅ Update to match backend response
+      if (data?.botReply) {
         const aiMessage: ChatMessage = {
           role: 'assistant',
-          content: data.choices[0].message.content,
-          timestamp: new Date()
+          content: data.botReply,  // ✅ Extract correct key
+          timestamp: new Date(),
         };
-        
-        setChatMessages(prev => [...prev, aiMessage]);
+  
+        setChatMessages((prev) => [...prev, aiMessage]);
+      } else {
+        throw new Error('No response from AI');
       }
     } catch (error) {
-      console.error('Error calling OpenAI:', error);
-      
-      // Add error message
-      const errorMessage: ChatMessage = {
-        role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again later.',
-        timestamp: new Date()
-      };
-      
-      setChatMessages(prev => [...prev, errorMessage]);
+      console.error('Error:', error);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: 'No response from AI.', timestamp: new Date() },
+      ]);
     } finally {
       setIsLoading(false);
     }
   };
-
+  
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !isLoading) {
       sendMessage();
