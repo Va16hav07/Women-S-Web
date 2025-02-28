@@ -1,8 +1,15 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Shield, Facebook, Twitter, Instagram, Linkedin, Mail, Phone, MapPin } from 'lucide-react';
 
 const Footer: React.FC = () => {
+  const location = useLocation();
+
+  // Hide Footer on Dashboard pages
+  if (location.pathname.startsWith('/dashboard')) {
+    return null;
+  }
+
   return (
     <footer className="bg-gray-100 dark:bg-gray-800 pt-12 pb-8 transition-colors duration-300">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">

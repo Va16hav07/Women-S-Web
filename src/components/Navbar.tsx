@@ -37,6 +37,11 @@ const Navbar: React.FC<NavbarProps> = ({ theme, toggleTheme }) => {
     setIsOpen(false);
   }, [location]);
 
+  // Hide Navbar on the Dashboard page
+  if (location.pathname.startsWith('/dashboard')) {
+    return null;
+  }
+
   const navLinks = [
     { name: 'Home', path: '/' },
     { name: 'Features', path: '/features' },
@@ -46,7 +51,7 @@ const Navbar: React.FC<NavbarProps> = ({ theme, toggleTheme }) => {
 
   return (
     <header
-      className={`fixed w-full z-50 transition-all duration-300 ${
+      className={`w-full z-50 transition-all duration-300 ${
         scrolled
           ? 'bg-white/90 dark:bg-gray-900/90 backdrop-blur-md shadow-md'
           : 'bg-transparent'
