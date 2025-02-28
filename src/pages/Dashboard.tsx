@@ -5,7 +5,7 @@ import {
   AlertTriangle, Navigation, ChevronRight, Heart, X,
   Plus, Trash2, Send, CheckCircle
 } from "lucide-react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import { LatLngExpression } from 'leaflet';
 import { overpass } from 'overpass-ts';
 import RouteLayer from "../components/RouteLayer";
@@ -64,6 +64,7 @@ const Dashboard = () => {
     name: string;
     type: string;
   }>>([]);
+  const [userLocation, setUserLocation] = useState<LatLngExpression | null>(null);
   
   // Update time every minute
   useEffect(() => {
@@ -180,6 +181,24 @@ const Dashboard = () => {
   useEffect(() => {
     fetchSafePoints(mapCenter);
   }, [mapCenter]);
+
+  // Fetch user's live location
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setUserLocation([latitude, longitude]);
+        },
+        (error) => {
+          console.error("Error fetching user location:", error);
+        },
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+      );
+    } else {
+      console.error("Geolocation is not supported by this browser.");
+    }
+  }, []);
 
   return (
     <div className={`relative min-h-screen ${darkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"} transition-colors duration-300`}>
@@ -409,6 +428,17 @@ const Dashboard = () => {
                     to={toAddress} 
                     darkMode={darkMode}
                   />
+                )}
+
+                {userLocation && (
+                  <Marker position={userLocation}>
+                    <Popup>
+                      <div className={`p-2 ${darkMode ? "text-gray-900" : "text-gray-700"}`}>
+                        <h3 className="font-medium">Your Location</h3>
+                        <p className="text-sm">You are here</p>
+                      </div>
+                    </Popup>
+                  </Marker>
                 )}
               </MapContainer>
 
