@@ -38,7 +38,7 @@ const Navbar: React.FC<NavbarProps> = ({ theme, toggleTheme }) => {
   }, [location]);
 
   // Hide Navbar on the Dashboard page
-if (location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/ProfileSettings')) {
+if (location.pathname.startsWith('/dashboard') || location.pathname.toLowerCase().startsWith("/profile-settings")) {
     return null;
   }
 
