@@ -1,7 +1,7 @@
 import { useState, useEffect, MouseEvent, useRef, useCallback } from "react";
 import {
   Menu, User, LogOut, AlertCircle, Home, Phone, Clock,
-  Bell, Users, MapPin, Settings, HelpCircle, Share, Shield,
+  Bell, Users, MapPin, HelpCircle, Shield,
   AlertTriangle, Navigation, ChevronRight, Heart, X,
   Plus, Trash2, Send, CheckCircle
 } from "lucide-react";
@@ -14,7 +14,6 @@ import SaveRouteModal from '../components/SaveRouteModal';
 import { TravelRecommendationService, TravelRoute } from '../services/TravelRecommendationService';
 
 // Add this type definition at the top of the file
-type Priority = "high" | "medium" | "low";
 type LatLngLiteral = google.maps.LatLngLiteral;
 type DirectionsResult = google.maps.DirectionsResult;
 type MapOptions = google.maps.MapOptions;
@@ -43,8 +42,7 @@ const Dashboard = () => {
   const [newContact, setNewContact] = useState<{
     name: string;
     phone: string;
-    priority: Priority;
-  }>({ name: "", phone: "", priority: "medium" });
+  }>({ name: "", phone: "" });
   const [showAddContact, setShowAddContact] = useState(false);
   const [alertSent, setAlertSent] = useState<number | null>(null);
   const [mapCenter, setMapCenter] = useState<LatLngLiteral>(DEFAULT_CENTER);
@@ -422,34 +420,31 @@ const Dashboard = () => {
         </div>
         
         {/* Decorative Element */}
-        <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-pink-200 to-transparent opacity-20 rounded-bl-full -z-10"></div>
-        
-        <nav className="flex flex-col space-y-2 p-4">
-          <button className={`flex items-center space-x-3 p-3 rounded-lg transition-all duration-200 transform hover:translate-x-2 ${darkMode ? "bg-pink-900/40 text-pink-100 hover:bg-pink-800/60" : "bg-pink-100 text-pink-800 hover:bg-pink-200"}`}>
-            <Home className="h-5 w-5" />
-            <span>Dashboard</span>
-            <ChevronRight className="h-4 w-4 ml-auto" />
-          </button>
-          
-          {[
-            { icon: <Phone className="h-5 w-5" />, label: "Emergency Contacts", path: "/emergency-contacts" },
-            { icon: <Share className="h-5 w-5" />, label: "Secure Sharing", path: "/secure-sharing" },
-            { icon: <AlertTriangle className="h-5 w-5" />, label: "Danger Zones", path: "/danger-zones" },
-            { icon: <Users className="h-5 w-5" />, label: "Be a Nearby Responder", path: "/responder" },
-            { icon: <Settings className="h-5 w-5" />, label: "Settings", path: "/settings" }
-          ].map((item, index) => (
-            <Link 
-              key={index}
-              to={item.path}
-              className={`flex items-center space-x-3 p-3 rounded-lg transition-all duration-200 transform hover:translate-x-2 ${darkMode ? "hover:bg-gray-700/70" : "hover:bg-gray-100"}`}
-              style={{ animationDelay: `${index * 100}ms` }}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-              <ChevronRight className="h-4 w-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
-            </Link>
-          ))}
-        </nav>
+<div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-pink-200 to-transparent opacity-20 rounded-bl-full -z-10"></div>
+
+<nav className="flex flex-col space-y-2 p-4">
+  <button className={`flex items-center space-x-3 p-3 rounded-lg transition-all duration-200 transform hover:translate-x-2 ${darkMode ? "bg-pink-900/40 text-pink-100 hover:bg-pink-800/60" : "bg-pink-100 text-pink-800 hover:bg-pink-200"}`}>
+    <Home className="h-5 w-5" />
+    <span>Dashboard</span>
+    <ChevronRight className="h-4 w-4 ml-auto" />
+  </button>
+
+  {[
+    { icon: <Phone className="h-5 w-5" />, label: "Emergency Contacts", path: "/emergency-contacts" },
+    { icon: <AlertTriangle className="h-5 w-5" />, label: "Danger Zones", path: "/danger-zones" }
+  ].map((item, index) => (
+    <Link 
+      key={index}
+      to={item.path}
+      className={`flex items-center space-x-3 p-3 rounded-lg transition-all duration-200 transform hover:translate-x-2 ${darkMode ? "hover:bg-gray-700/70" : "hover:bg-gray-100"}`}
+      style={{ animationDelay: `${index * 100}ms` }}
+    >
+      {item.icon}
+      <span>{item.label}</span>
+      <ChevronRight className="h-4 w-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+    </Link>
+  ))}
+</nav>
         
         {/* Bottom Section */}
         <div className="absolute bottom-0 left-0 w-full p-6 border-t border-gray-200 dark:border-gray-700">
