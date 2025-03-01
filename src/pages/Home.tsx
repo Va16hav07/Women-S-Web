@@ -30,22 +30,6 @@ const Home: React.FC = () => {
                 <p className="text-lg md:text-xl text-gray-600 dark:text-gray-400 mb-8">
                   Our innovative alert system uses AI and location tracking to provide real-time protection and peace of mind for women everywhere.
                 </p>
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <Button 
-                    variant="primary" 
-                    size="lg"
-                    icon={<Shield size={20} />}
-                  >
-                    Get Started
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="lg"
-                    icon={<ChevronRight size={20} />}
-                  >
-                    Learn More
-                  </Button>
-                </div>
               </motion.div>
             </div>
             

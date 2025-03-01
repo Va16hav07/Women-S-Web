@@ -1,4 +1,4 @@
-import { act } from 'react';
+// import { act } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Shield, Facebook, Twitter, Instagram, Linkedin, Mail, Phone, MapPin } from 'lucide-react';
 
@@ -57,45 +57,9 @@ const Footer: React.FC = () => {
                 </Link>
               </li>
               <li>
-                <Link to="/technology" className="text-gray-600 dark:text-gray-400 hover:text-pink-600 dark:hover:text-pink-600 transition-colors">
-                  Technology
-                </Link>
-              </li>
-              <li>
                 <Link to="/contact" className="text-gray-600 dark:text-gray-400 hover:text-pink-600 dark:hover:text-pink-600 transition-colors">
                   Contact
                 </Link>
-              </li>
-            </ul>
-          </div>
-
-          <div>
-            <h3 className="font-semibold text-lg mb-4">Resources</h3>
-            <ul className="space-y-2">
-              <li>
-                <a href="#" className="text-gray-600 dark:text-gray-400 hover:text-pink-600 dark:hover:text-pink-600 transition-colors">
-                  Safety Tips
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-gray-600 dark:text-gray-400 hover:text-pink-600 dark:hover:text-pink-600 transition-colors">
-                  Emergency Contacts
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-gray-600 dark:text-gray-400 hover:text-pink-600 dark:hover:text-pink-600 transition-colors">
-                  User Guide
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-gray-600 dark:text-gray-400 hover:text-pink-600 dark:hover:text-pink-600 transition-colors">
-                  FAQ
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-gray-600 dark:text-gray-400 hover:text-pink-600 dark:hover:text-pink-600 transition-colors">
-                  Privacy Policy
-                </a>
               </li>
             </ul>
           </div>
@@ -106,12 +70,12 @@ const Footer: React.FC = () => {
               <li className="flex items-start space-x-3">
                 <MapPin className="h-5 w-5 text-pink-600 mt-0.5" />
                 <span className="text-gray-600 dark:text-gray-400">
-                  123 Safety Street, Secure City, SC 12345
+                  Polaris School of Technology
                 </span>
               </li>
               <li className="flex items-center space-x-3">
                 <Phone className="h-5 w-5 text-pink-600" />
-                <span className="text-gray-600 dark:text-gray-400">+1 (555) 123-4567</span>
+                <span className="text-gray-600 dark:text-gray-400">+91 7815841526</span>
               </li>
               <li className="flex items-center space-x-3">
                 <Mail className="h-5 w-5 text-pink-600" />
