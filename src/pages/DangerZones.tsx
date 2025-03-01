@@ -1,16 +1,21 @@
+import React from "react";
 import { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Circle, Popup } from 'react-leaflet';
-import { LatLngExpression } from 'leaflet';
-import { AlertTriangle, Plus, MapPin, Flag, Search, Filter } from 'lucide-react';
+import { GoogleMap, LoadScript, Circle, InfoWindow } from '@react-google-maps/api';
+import { AlertTriangle, Plus, Search, Filter, ArrowLeft } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface IncidentReport {
   id: number;
-  location: LatLngExpression;
+  location: google.maps.LatLngLiteral;
   type: string;
   description: string;
   timestamp: Date;
   severity: 'high' | 'medium' | 'low';
 }
+
+const GOOGLE_MAPS_API_KEY = "AIzaSyCTncgg-x65QicwCIqyGJYopp45dMBh74Y";
+const DEFAULT_CENTER = { lat: 28.6139, lng: 77.2090 }; // Delhi coordinates
+const DEFAULT_ZOOM = 13;
 
 const DangerZones = () => {
   const [darkMode] = useState(false);
@@ -21,10 +26,7 @@ const DangerZones = () => {
     description: '',
     severity: 'medium' as 'high' | 'medium' | 'low'
   });
-  const [currentLocation, setCurrentLocation] = useState<LatLngExpression | null>(null);
-
-  const DEFAULT_CENTER: LatLngExpression = [28.6139, 77.2090]; // Delhi coordinates
-  const DEFAULT_ZOOM = 13;
+  const [currentLocation, setCurrentLocation] = useState<google.maps.LatLngLiteral | null>(null);
 
   useEffect(() => {
     fetch('https://run.mocky.io/v3/ff30edce-b38e-41ed-b139-af765ae6c161')
@@ -43,7 +45,7 @@ const DangerZones = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setCurrentLocation([position.coords.latitude, position.coords.longitude]);
+          setCurrentLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
         },
         (error) => {
           console.error('Error getting current location:', error);
@@ -89,77 +91,77 @@ const DangerZones = () => {
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
       <div className="max-w-7xl mx-auto p-4">
         {/* Header */}
-        <div className="mb-6">
+        <div className="mb-6 flex items-center">
+          <Link to="/dashboard" className="mr-4">
+            <ArrowLeft className="h-6 w-6 text-gray-500 hover:text-gray-700" />
+          </Link>
           <h1 className="text-2xl font-bold flex items-center">
             <AlertTriangle className="h-6 w-6 mr-2 text-red-500" />
             Danger Zones
           </h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-gray-500 dark:text-gray-400 mt-1 ml-4">
             View and report unsafe areas to help keep our community safe
           </p>
         </div>
 
-        {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Map Section */}
-          <div className="lg:col-span-2">
-            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg overflow-hidden`}>
-              <div className="h-[600px]">
-                <MapContainer
-                  center={currentLocation || DEFAULT_CENTER}
-                  zoom={DEFAULT_ZOOM}
-                  className="w-full h-full"
-                >
-                  <TileLayer
-                    url={darkMode 
-                      ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                      : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    }
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                  />
-                  {currentLocation && (
-                    <Circle
-                      center={currentLocation}
-                      radius={100}
-                      pathOptions={{
-                        color: '#3b82f6',
-                        fillColor: '#3b82f6',
-                        fillOpacity: 0.5
-                      }}
-                    >
-                      <Popup>
-                        <div className="p-2">
-                          <h3 className="font-medium">Your Location</h3>
-                        </div>
-                      </Popup>
-                    </Circle>
-                  )}
-                  {incidents.map((incident) => (
-                    <Circle
-                      key={incident.id}
-                      center={incident.location}
-                      radius={500}
-                      pathOptions={{
-                        color: getSeverityColor(incident.severity),
-                        fillColor: getSeverityColor(incident.severity),
-                        fillOpacity: 0.3
-                      }}
-                    >
-                      <Popup>
-                        <div className="p-2">
-                          <h3 className="font-medium">{incident.type}</h3>
-                          <p className="text-sm text-gray-600">{incident.description}</p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {incident.timestamp.toLocaleDateString()}
-                          </p>
-                        </div>
-                      </Popup>
-                    </Circle>
-                  ))}
-                </MapContainer>
-              </div>
-            </div>
-          </div>
+{/* Main Content */}
+<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  {/* Map Section */}
+  <div className="lg:col-span-2">
+    <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg overflow-hidden`}>
+      <div className="h-[600px]">
+        <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY}>
+          <GoogleMap
+            mapContainerStyle={{ width: '100%', height: '100%' }}
+            center={currentLocation || DEFAULT_CENTER}
+            zoom={DEFAULT_ZOOM}
+          >
+            {currentLocation && (
+              <>
+                <Circle
+                  center={currentLocation}
+                  radius={100}
+                  options={{
+                    strokeColor: '#3b82f6',
+                    fillColor: '#3b82f6',
+                    fillOpacity: 0.5
+                  }}
+                />
+                <InfoWindow position={currentLocation}>
+                  <div className="p-2">
+                    <h3 className="font-medium">Your Location</h3>
+                  </div>
+                </InfoWindow>
+              </>
+            )}
+            {incidents.map((incident) => (
+              <React.Fragment key={incident.id}>
+                <Circle
+                  center={incident.location}
+                  radius={500}
+                  options={{
+                    strokeColor: getSeverityColor(incident.severity),
+                    fillColor: getSeverityColor(incident.severity),
+                    fillOpacity: 0.3
+                  }}
+                />
+                <InfoWindow position={incident.location}>
+                  <div className="p-2">
+                    <h3 className="font-medium">{incident.type}</h3>
+                    <p className="text-sm text-gray-600">{incident.description}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {incident.timestamp.toLocaleDateString()}
+                    </p>
+                  </div>
+                </InfoWindow>
+              </React.Fragment>
+            ))}
+          </GoogleMap>
+        </LoadScript>
+      </div>
+    </div>
+  </div>
+</div>
 
           {/* Sidebar */}
           <div className="space-y-6">
@@ -298,7 +300,8 @@ const DangerZones = () => {
           </div>
         </div>
       </div>
-    </div>
+  </div>
+
   );
 };
 
