@@ -6,7 +6,7 @@ const Footer: React.FC = () => {
   const location = useLocation();
 
   // Hide Footer on Dashboard pages
-  if (location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/profile-settings')) {
+  if (location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/profile-settings')||location.pathname.startsWith('/emergency-contacts')||location.pathname.startsWith('/secure-sharing')||location.pathname.startsWith('/danger-zones')||location.pathname.startsWith('/notification-settings')||location.pathname.startsWith('/settings')) {
     return null;
   }
 
