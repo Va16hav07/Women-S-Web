@@ -850,7 +850,7 @@ const Dashboard = () => {
               <span className="sr-only">Emergency SOS</span>
             </button>
           </div>
-        </div>
+       </div>
       </div>
       
       {/* Save Route Modal */}
