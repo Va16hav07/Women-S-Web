@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
 
-type Priority = "high" | "medium" | "low";
 
 export interface Contact {
   id: number;
   name: string;
   phone: string;
-  priority: Priority;
 }
 
 export const useContacts = () => {
