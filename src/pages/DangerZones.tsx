@@ -15,32 +15,42 @@ interface IncidentReport {
 const DangerZones = () => {
   const [darkMode] = useState(false);
   const [showReportForm, setShowReportForm] = useState(false);
-  const [incidents, setIncidents] = useState<IncidentReport[]>([
-    {
-      id: 1,
-      location: [28.6139, 77.2090],
-      type: 'Harassment',
-      description: 'Street harassment reported in this area',
-      timestamp: new Date('2024-01-15'),
-      severity: 'high'
-    },
-    {
-      id: 2,
-      location: [28.6229, 77.2190],
-      type: 'Poor Lighting',
-      description: 'Area lacks proper street lighting',
-      timestamp: new Date('2024-01-14'),
-      severity: 'medium'
-    }
-  ]);
+  const [incidents, setIncidents] = useState<IncidentReport[]>([]);
   const [newReport, setNewReport] = useState({
     type: '',
     description: '',
     severity: 'medium' as 'high' | 'medium' | 'low'
   });
+  const [currentLocation, setCurrentLocation] = useState<LatLngExpression | null>(null);
 
   const DEFAULT_CENTER: LatLngExpression = [28.6139, 77.2090]; // Delhi coordinates
   const DEFAULT_ZOOM = 13;
+
+  useEffect(() => {
+    fetch('https://run.mocky.io/v3/ff30edce-b38e-41ed-b139-af765ae6c161')
+      .then(response => response.json())
+      .then(data => {
+        const fetchedIncidents = data.map((incident: any) => ({
+          ...incident,
+          timestamp: new Date(incident.timestamp)
+        }));
+        setIncidents(fetchedIncidents);
+      })
+      .catch(error => console.error('Error fetching incidents:', error));
+  }, []);
+
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setCurrentLocation([position.coords.latitude, position.coords.longitude]);
+        },
+        (error) => {
+          console.error('Error getting current location:', error);
+        }
+      );
+    }
+  }, []);
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -63,7 +73,7 @@ const DangerZones = () => {
 
     const newIncident: IncidentReport = {
       id: incidents.length + 1,
-      location: DEFAULT_CENTER, // In a real app, you'd get the actual clicked location
+      location: currentLocation || DEFAULT_CENTER, // Use current location if available
       type: newReport.type,
       description: newReport.description,
       timestamp: new Date(),
@@ -96,7 +106,7 @@ const DangerZones = () => {
             <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg overflow-hidden`}>
               <div className="h-[600px]">
                 <MapContainer
-                  center={DEFAULT_CENTER}
+                  center={currentLocation || DEFAULT_CENTER}
                   zoom={DEFAULT_ZOOM}
                   className="w-full h-full"
                 >
@@ -107,6 +117,23 @@ const DangerZones = () => {
                     }
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   />
+                  {currentLocation && (
+                    <Circle
+                      center={currentLocation}
+                      radius={100}
+                      pathOptions={{
+                        color: '#3b82f6',
+                        fillColor: '#3b82f6',
+                        fillOpacity: 0.5
+                      }}
+                    >
+                      <Popup>
+                        <div className="p-2">
+                          <h3 className="font-medium">Your Location</h3>
+                        </div>
+                      </Popup>
+                    </Circle>
+                  )}
                   {incidents.map((incident) => (
                     <Circle
                       key={incident.id}
