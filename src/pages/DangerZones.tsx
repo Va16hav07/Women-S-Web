@@ -104,64 +104,63 @@ const DangerZones = () => {
           </p>
         </div>
 
-{/* Main Content */}
-<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-  {/* Map Section */}
-  <div className="lg:col-span-2">
-    <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg overflow-hidden`}>
-      <div className="h-[600px]">
-        <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY}>
-          <GoogleMap
-            mapContainerStyle={{ width: '100%', height: '100%' }}
-            center={currentLocation || DEFAULT_CENTER}
-            zoom={DEFAULT_ZOOM}
-          >
-            {currentLocation && (
-              <>
-                <Circle
-                  center={currentLocation}
-                  radius={100}
-                  options={{
-                    strokeColor: '#3b82f6',
-                    fillColor: '#3b82f6',
-                    fillOpacity: 0.5
-                  }}
-                />
-                <InfoWindow position={currentLocation}>
-                  <div className="p-2">
-                    <h3 className="font-medium">Your Location</h3>
-                  </div>
-                </InfoWindow>
-              </>
-            )}
-            {incidents.map((incident) => (
-              <React.Fragment key={incident.id}>
-                <Circle
-                  center={incident.location}
-                  radius={500}
-                  options={{
-                    strokeColor: getSeverityColor(incident.severity),
-                    fillColor: getSeverityColor(incident.severity),
-                    fillOpacity: 0.3
-                  }}
-                />
-                <InfoWindow position={incident.location}>
-                  <div className="p-2">
-                    <h3 className="font-medium">{incident.type}</h3>
-                    <p className="text-sm text-gray-600">{incident.description}</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {incident.timestamp.toLocaleDateString()}
-                    </p>
-                  </div>
-                </InfoWindow>
-              </React.Fragment>
-            ))}
-          </GoogleMap>
-        </LoadScript>
-      </div>
-    </div>
-  </div>
-</div>
+        {/* Main Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Map Section */}
+          <div className="lg:col-span-2">
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-lg overflow-hidden`}>
+              <div className="h-[600px]">
+                <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY}>
+                  <GoogleMap
+                    mapContainerStyle={{ width: '100%', height: '100%' }}
+                    center={currentLocation || DEFAULT_CENTER}
+                    zoom={DEFAULT_ZOOM}
+                  >
+                    {currentLocation && (
+                      <>
+                        <Circle
+                          center={currentLocation}
+                          radius={100}
+                          options={{
+                            strokeColor: '#3b82f6',
+                            fillColor: '#3b82f6',
+                            fillOpacity: 0.5
+                          }}
+                        />
+                        <InfoWindow position={currentLocation}>
+                          <div className="p-2">
+                            <h3 className="font-medium">Your Location</h3>
+                          </div>
+                        </InfoWindow>
+                      </>
+                    )}
+                    {incidents.map((incident) => (
+                      <React.Fragment key={incident.id}>
+                        <Circle
+                          center={incident.location}
+                          radius={500}
+                          options={{
+                            strokeColor: getSeverityColor(incident.severity),
+                            fillColor: getSeverityColor(incident.severity),
+                            fillOpacity: 0.3
+                          }}
+                        />
+                        <InfoWindow position={incident.location}>
+                          <div className="p-2">
+                            <h3 className="font-medium">{incident.type}</h3>
+                            <p className="text-sm text-gray-600">{incident.description}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {incident.timestamp.toLocaleDateString()}
+                            </p>
+                          </div>
+                        </InfoWindow>
+                      </React.Fragment>
+                    ))}
+                  </GoogleMap>
+                </LoadScript>
+              </div>
+            </div>
+          </div>
 
           {/* Sidebar */}
           <div className="space-y-6">
@@ -300,8 +299,7 @@ const DangerZones = () => {
           </div>
         </div>
       </div>
-  </div>
-
+    </div>
   );
 };
 
