@@ -415,7 +415,7 @@ const Dashboard = () => {
         <div className="p-6 text-xl font-bold flex items-center">
           <Shield className={`h-7 w-7 mr-3 ${darkMode ? "text-pink-400" : "text-pink-600"}`} />
           <span className="bg-gradient-to-r from-pink-500 to-purple-600 bg-clip-text text-transparent font-extrabold text-2xl tracking-tight">
-            SafeHer
+            SafeGuardian
           </span>
         </div>
         
@@ -489,7 +489,7 @@ const Dashboard = () => {
             <h1 className="text-xl font-bold ml-4 flex items-center">
               <Shield className={`h-5 w-5 mr-2 ${darkMode ? "text-pink-400" : "text-pink-600"}`} />
               <span className="bg-gradient-to-r from-pink-500 to-purple-600 bg-clip-text text-transparent">
-                SafeHer
+                SafeGuardian
               </span>
             </h1>
           </div>
