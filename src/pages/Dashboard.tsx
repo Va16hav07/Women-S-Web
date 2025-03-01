@@ -536,28 +536,26 @@ const Dashboard = () => {
                     </div>
                   </div>
                   <div className="p-2">
-                    <Link 
-                      to="/notification-settings" 
-                      className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}
-                    >
-                      <div className="flex items-center">
-                        <Bell className="h-5 w-5 mr-2" />
-                        Notification Preferences
-                      </div>
-                    </Link>
-                    <Link 
-                      to="/privacy-settings" 
-                      className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}
-                    >
-                      <div className="flex items-center">
-                        <Shield className="h-5 w-5 mr-2" />
-                        Privacy Settings
-                      </div>
-                    </Link>
-                    <button className={`flex items-center w-full p-3 mt-2 text-left rounded-lg text-red-600 ${darkMode ? "hover:bg-red-900/30" : "hover:bg-red-100"} transition-colors duration-200`}>
-                      <LogOut className="h-5 w-5 mr-2" /> Sign Out
-                    </button>
-                  </div>
+  <Link 
+    to="/notification-settings" 
+    className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}
+  >
+    <div className="flex items-center">
+      <Bell className="h-5 w-5 mr-2" />
+      Notification Preferences
+    </div>
+  </Link>
+  
+  <Link 
+    to="/privacy-settings" 
+    className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}
+  >
+    <div className="flex items-center">
+      <Shield className="h-5 w-5 mr-2" />
+      Privacy Settings
+    </div>
+  </Link>
+</div>
                 </div>
               )}
             </div>
