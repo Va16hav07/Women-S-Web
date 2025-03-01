@@ -206,7 +206,6 @@ const Dashboard = () => {
           
           {[
             { icon: <Phone className="h-5 w-5" />, label: "Emergency Contacts", path: "/emergency-contacts" },
-            { icon: <Clock className="h-5 w-5" />, label: "Safety Timer", path: "/safety-timer" },
             { icon: <Share className="h-5 w-5" />, label: "Secure Sharing", path: "/secure-sharing" },
             { icon: <AlertTriangle className="h-5 w-5" />, label: "Danger Zones", path: "/danger-zones" },
             { icon: <Users className="h-5 w-5" />, label: "Be a Nearby Responder", path: "/responder" },
