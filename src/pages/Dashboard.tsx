@@ -81,33 +81,42 @@ const Dashboard = () => {
   };
 
   const handleSOS = () => {
-    // Animation and feedback for emergency trigger
     const sosButton = document.getElementById("sos-button");
     sosButton?.classList.add("scale-150");
+  
+    // Show confirmation alert instantly
+    const userConfirmed = window.confirm("⚠️ SOS Alert! Press 'OK' within 5 seconds to confirm.");
+  
+    // Start a 5-second timer
     setTimeout(async () => {
-      sosButton?.classList.remove("scale-150");
-      
+      if (!userConfirmed) {
+        sosButton?.classList.remove("scale-150");
+        alert("SOS alert cancelled.");
+        return;
+      }
+  
       try {
-        const response = await fetch('http://localhost:3001/api/sos', {
-          method: 'POST',
+        const response = await fetch("http://localhost:3001/api/sos", {
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
         });
-        
-        const data = await response.json();
-        
-        if (response.ok) {
-          alert("SOS alert sent to your emergency contacts and nearby authorities!");
-        } else {
-          alert(data.message || 'Failed to send SOS messages');
+  
+        if (!response.ok) {
+          throw new Error("Failed to send SOS messages.");
         }
+  
+        alert("🚨 SOS alert sent to your emergency contacts and nearby authorities!");
+  
       } catch (error) {
-        alert('Network error. Please try again.');
+        const errorMessage = error instanceof Error ? error.message : "Network error. Please try again.";
+        alert(errorMessage);
+      } finally {
+        sosButton?.classList.remove("scale-150");
       }
-    }, 300);
+    }, 5000); // 5-second delay before action
   };
-
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
   };
