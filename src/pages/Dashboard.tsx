@@ -18,15 +18,10 @@ interface OverpassApiOptions {
   endpoint: string;
 }
 
-class OverpassApi {
-  constructor(options: OverpassApiOptions) {
-    // Constructor implementation handled by the overpass-ts library
-  }
-  fetch(query: string): Promise<any> {
-    // Method implementation handled by the overpass-ts library
-    return Promise.resolve(null);
-  }
-}
+const fetchFromOverpass = async (query: string): Promise<any> => {
+  const response = await overpass(query);
+  return response;
+};
 
 // Add this type definition at the top of the file
 type Priority = "high" | "medium" | "low";
@@ -89,9 +84,27 @@ const Dashboard = () => {
     // Animation and feedback for emergency trigger
     const sosButton = document.getElementById("sos-button");
     sosButton?.classList.add("scale-150");
-    setTimeout(() => {
+    setTimeout(async () => {
       sosButton?.classList.remove("scale-150");
-      alert("SOS alert sent to your emergency contacts and nearby authorities!");
+      
+      try {
+        const response = await fetch('http://localhost:3001/api/sos', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+          alert("SOS alert sent to your emergency contacts and nearby authorities!");
+        } else {
+          alert(data.message || 'Failed to send SOS messages');
+        }
+      } catch (error) {
+        alert('Network error. Please try again.');
+      }
     }, 300);
   };
 
@@ -114,12 +127,10 @@ const Dashboard = () => {
   };
 
   const fetchSafePoints = async (center: LatLngExpression) => {
-    const api = new OverpassApi({ endpoint: 'https://overpass-api.de/api/interpreter' });
-    
     // Convert LatLngExpression to [lat, lng] array
     let lat: number, lng: number;
     if (Array.isArray(center)) {
-      [lat, lng] = center;
+      [lat, lng] = center as [number, number];
     } else if (typeof center === 'object' && 'lat' in center && 'lng' in center) {
       lat = center.lat;
       lng = center.lng;
@@ -141,7 +152,7 @@ const Dashboard = () => {
     `;
   
     try {
-      const response = await api.fetch(query);
+      const response = await fetchFromOverpass(query);
       const points = response.elements.map((element: {
         lat: number;
         lon: number;
