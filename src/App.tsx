@@ -11,7 +11,6 @@ import Contact from "./pages/Contact";
 import Login from "./pages/signin";  
 import Signup from "./pages/signup"; 
 import Dashboard from "./pages/Dashboard";
-import ProfileSettings from "./pages/ProfileSettings";
 import ScrollToTop from "./components/ScrollToTop";
 import Logout from "./pages/logout";
 import { User } from "firebase/auth";
@@ -77,7 +76,6 @@ const App = () => {
               <Route path="/sign-in" element={<Login />} />  {/* ✅ Fixed route */}
               <Route path="/sign-up" element={<Signup />} />  {/* ✅ Fixed route */}
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/profile-settings" element={<ProfileSettings />} />
               <Route path="/danger-zones" element={<DangerZones />} />
               <Route path="/privacy-settings" element={<PrivacySettings />} />
               <Route path="/notification-settings" element={<NotificationSettings />} />
