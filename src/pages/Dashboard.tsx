@@ -127,18 +127,19 @@ const Dashboard = () => {
   };
 
   const fetchSafePoints = async (center: LatLngExpression) => {
-    // Convert LatLngExpression to [lat, lng] array
     let lat: number, lng: number;
+  
     if (Array.isArray(center)) {
       [lat, lng] = center as [number, number];
-    } else if (typeof center === 'object' && 'lat' in center && 'lng' in center) {
+    } else if (typeof center === "object" && "lat" in center && "lng" in center) {
       lat = center.lat;
       lng = center.lng;
     } else {
-      // Default fallback
       [lat, lng] = DEFAULT_CENTER as [number, number];
     }
-    
+  
+    console.log("Fetching safe points for:", lat, lng);
+  
     const query = `
       [out:json][timeout:25];
       (
@@ -153,21 +154,18 @@ const Dashboard = () => {
   
     try {
       const response = await fetchFromOverpass(query);
-      const points = response.elements.map((element: {
-        lat: number;
-        lon: number;
-        tags: { name?: string; amenity: string };
-      }) => ({
+      const points = response.elements.map((element: { lat: number; lon: number; tags: { name?: string; amenity: string } }) => ({
         lat: element.lat,
         lon: element.lon,
-        name: element.tags.name || 'Unnamed',
-        type: element.tags.amenity
+        name: element.tags.name || "Unnamed",
+        type: element.tags.amenity,
       }));
       setSafePoints(points);
     } catch (error) {
-      console.error('Error fetching safe points:', error);
+      console.error("Error fetching safe points:", error);
     }
   };
+  
 
   useEffect(() => {
     fetchSafePoints(mapCenter);
@@ -190,6 +188,34 @@ const Dashboard = () => {
       console.error("Geolocation is not supported by this browser.");
     }
   }, []);
+
+  const sendLocationToAPI = async () => {
+    if (userLocation) {
+      try {
+        const response = await fetch("http://localhost:8888/api/location", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            latitude: (userLocation as [number, number])[0],
+            longitude: (userLocation as [number, number])[1],
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          console.error("Failed to send location:", data.message);
+        }
+      } catch (error) {
+        console.error("Error sending location:", error);
+      }
+    }
+  };
+
+  // Send location to API every 1 minute
+  useEffect(() => {
+    const interval = setInterval(sendLocationToAPI, 60000);
+    return () => clearInterval(interval);
+  }, [userLocation]);
 
   return (
     <div className={`relative min-h-screen ${darkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"} transition-colors duration-300`}>
