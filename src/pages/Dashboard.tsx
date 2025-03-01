@@ -298,7 +298,7 @@ const Dashboard = () => {
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center mr-2 shadow-md">
                   <User className="h-5 w-5 text-white" />
                 </div>
-                <span className="hidden md:inline font-medium">Emma Wilson</span>
+                <span className="hidden md:inline font-medium">User</span>
               </button>
               
               {userDropdown && (
@@ -309,16 +309,11 @@ const Dashboard = () => {
                         <User className="h-6 w-6 text-white" />
                       </div>
                       <div>
-                        <p className="font-medium text-lg">Emma Wilson</p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">emma.w@example.com</p>
+                        <p className="font-medium text-lg">User</p>
                       </div>
                     </div>
                   </div>
                   <div className="p-2">
-                    <Link to="/profile-settings" className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}>
-                      Profile Settings
-                    </Link>
-                    {/* Replace the non-clickable button with a Link */}
                     <Link 
                       to="/notification-settings" 
                       className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}
