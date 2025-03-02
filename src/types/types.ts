@@ -24,13 +24,3 @@ export interface MapStyles {
   height: string;
   width: string;
 }
-
-export interface MarkerStyle {
-  path: string;
-  fillColor: string;
-  fillOpacity: number;
-  strokeWeight: number;
-  strokeColor: string;
-  scale: number;
-  anchor?: google.maps.Point;
-}
