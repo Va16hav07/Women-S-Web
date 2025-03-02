@@ -1,291 +1,474 @@
 import { DangerZone } from '../types/types';
 
-/**
- * Promise-based wrapper for navigator.geolocation.getCurrentPosition
- */
+interface Location {
+  lat: number;
+  lng: number;
+  heading?: number;
+  accuracy?: number;
+}
+
+// Create SVG for location marker with heading direction
+export const createLocationSvg = (heading?: number): string => {
+  const rotation = heading !== undefined ? heading : 0;
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+      <g transform="rotate(${rotation} 24 24)">
+        <circle cx="24" cy="24" r="20" fill="#4285F4" fill-opacity="0.2" />
+        <circle cx="24" cy="24" r="12" fill="#4285F4" stroke="#FFFFFF" stroke-width="2" />
+        <path d="M24 16 L28 24 L24 32 L20 24 Z" fill="#FFFFFF" />
+      </g>
+    </svg>
+  `;
+};
+
+// Create a fallback marker if SVG fails
+export const createFallbackMarker = () => {
+  return {
+    path: google.maps.SymbolPath.CIRCLE,
+    fillColor: "#4285F4",
+    fillOpacity: 1,
+    strokeColor: "#FFFFFF",
+    strokeWeight: 2,
+    scale: 8,
+  };
+};
+
+// Create danger zone marker based on risk level
+export const createDangerMarker = (riskLevel: string) => {
+  let color = "#FF9500"; // Default orange for medium
+  
+  if (riskLevel === 'high') {
+    color = "#FF3B30"; // Red
+  } else if (riskLevel === 'low') {
+    color = "#FFCC00"; // Yellow
+  }
+  
+  return {
+    path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+    fillColor: color,
+    fillOpacity: 0.9,
+    strokeColor: "#FFFFFF",
+    strokeWeight: 1.5,
+    scale: 6,
+    labelOrigin: new google.maps.Point(0, -3),
+  };
+};
+
+// Create a pulsing dot effect
+export const createPulsingDot = () => {
+  return {
+    url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
+        <circle cx="10" cy="10" r="8" fill="#4285F4" fill-opacity="0.8">
+          <animate attributeName="r" values="6;10;6" dur="2s" repeatCount="indefinite" />
+          <animate attributeName="fill-opacity" values="0.8;0.4;0.8" dur="2s" repeatCount="indefinite" />
+        </circle>
+        <circle cx="10" cy="10" r="5" fill="#4285F4" />
+      </svg>
+    `),
+    scaledSize: new google.maps.Size(20, 20),
+    anchor: new google.maps.Point(10, 10),
+  };
+};
+
+// Create a destination marker
+export const createDestinationMarker = () => {
+  return {
+    url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36">
+        <path d="M12 0C5.383 0 0 5.383 0 12c0 9 12 24 12 24s12-15 12-24c0-6.617-5.383-12-12-12z" fill="#6D28D9" />
+        <circle cx="12" cy="12" r="5" fill="white" />
+      </svg>
+    `),
+    scaledSize: new google.maps.Size(24, 36),
+    anchor: new google.maps.Point(12, 36),
+  };
+};
+
+// High precision options for geolocation
+export const getHighPrecisionOptions = (): PositionOptions => {
+  return {
+    enableHighAccuracy: true,
+    timeout: 10000, // 10 seconds
+    maximumAge: 30000 // 30 seconds
+  };
+};
+
+// Get current position with a Promise interface
 export const getCurrentPosition = (options?: PositionOptions): Promise<GeolocationPosition> => {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
-      reject(new Error('Geolocation is not supported by this browser.'));
+      reject(new Error("Geolocation is not supported by this browser."));
       return;
     }
-    
+
     navigator.geolocation.getCurrentPosition(resolve, reject, options);
   });
 };
 
 /**
- * Creates an enhanced SVG string for location marker with better visibility
- */
-export const createLocationSvg = (heading?: number): string => {
-  // Default SVG with no heading (blue dot with pulsing effect)
-  if (heading === undefined) {
-    return `
-      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
-        <circle cx="24" cy="24" r="10" fill="#4285F4" stroke="white" stroke-width="3">
-          <animate attributeName="opacity" values="1;0.7;1" dur="2s" repeatCount="indefinite" />
-        </circle>
-        <circle cx="24" cy="24" r="20" fill="#4285F4" fill-opacity="0.15" stroke="white" stroke-width="1">
-          <animate attributeName="r" values="12;20;12" dur="2s" repeatCount="indefinite" />
-          <animate attributeName="fill-opacity" values="0.3;0.1;0.3" dur="2s" repeatCount="indefinite" />
-        </circle>
-      </svg>
-    `;
-  }
-  
-  // Heading indicator version
-  return `
-    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
-      <circle cx="24" cy="24" r="12" fill="#4285F4" stroke="white" stroke-width="3">
-        <animate attributeName="opacity" values="1;0.8;1" dur="2s" repeatCount="indefinite" />
-      </circle>
-      <path transform="rotate(${heading} 24 24)" d="M24 8 L32 24 L24 20 L16 24 Z" fill="white" stroke="white" stroke-width="1">
-        <animate attributeName="opacity" values="1;0.7;1" dur="2s" repeatCount="indefinite" />
-      </path>
-    </svg>
-  `;
-};
-
-/**
- * Creates a fallback marker icon if SVG creation fails
- */
-export const createFallbackMarker = () => {
-  return {
-    path: window.google?.maps?.SymbolPath?.CIRCLE || 0,
-    scale: 12,
-    fillColor: '#4285F4',
-    fillOpacity: 1,
-    strokeColor: '#FFFFFF',
-    strokeWeight: 2,
-  };
-};
-
-/**
- * Creates customized danger zone markers based on risk level
- * Enhanced to be more visually appealing with larger, more vibrant markers
- */
-export const createDangerMarker = (riskLevel: 'high' | 'medium' | 'low'): google.maps.Symbol | google.maps.Icon => {
-  // Colors based on risk level
-  const colorMap = {
-    high: '#FF3B30',    // Vibrant red
-    medium: '#FF9500',  // Vibrant orange
-    low: '#FFCC00'      // Vibrant yellow
-  };
-  
-  const color = colorMap[riskLevel];
-  
-  // Create a more detailed SVG marker
-  return {
-    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="48" viewBox="0 0 32 48">
-        <path 
-          d="M16 0C7.16 0 0 7.16 0 16c0 10.67 16 32 16 32s16-21.33 16-32c0-8.84-7.16-16-16-16z"
-          fill="${color}" 
-          stroke="#FFFFFF" 
-          stroke-width="2"
-        />
-        <circle cx="16" cy="16" r="7" fill="white" />
-        <circle cx="16" cy="16" r="5" fill="${color}" />
-      </svg>
-    `)}`,
-    scaledSize: new google.maps.Size(32, 48),
-    anchor: new google.maps.Point(16, 48),
-    labelOrigin: new google.maps.Point(16, 16)
-  };
-};
-
-/**
- * Creates a pulsing dot effect for the current location marker
- */
-export const createPulsingDot = (color = '#4285F4'): string => {
-  return `
-    <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="12" cy="12" r="8" fill="${color}" stroke="white" stroke-width="2">
-        <animate attributeName="opacity" values="1;0.8;1" dur="2s" repeatCount="indefinite" />
-      </circle>
-      <circle cx="12" cy="12" r="12" fill="${color}" fill-opacity="0.3">
-        <animate attributeName="r" values="8;12;8" dur="2s" repeatCount="indefinite" />
-        <animate attributeName="fill-opacity" values="0.3;0.1;0.3" dur="2s" repeatCount="indefinite" />
-      </circle>
-    </svg>
-  `;
-};
-
-/**
- * Creates a custom marker for showing destinations
- * Enhanced with a more distinct appearance
- */
-export const createDestinationMarker = (): google.maps.Symbol | google.maps.Icon => {
-  return {
-    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-      <svg xmlns="http://www.w3.org/2000/svg" width="36" height="52" viewBox="0 0 36 52">
-        <path 
-          d="M18 0C8.06 0 0 8.06 0 18c0 12 18 34 18 34s18-22 18-34c0-9.94-8.06-18-18-18z"
-          fill="#4CAF50" 
-          stroke="#FFFFFF" 
-          stroke-width="2"
-        />
-        <path 
-          d="M26 17h-7v-7c0-.55-.45-1-1-1s-1 .45-1 1v7h-7c-.55 0-1 .45-1 1s.45 1 1 1h7v7c0 .55.45 1 1 1s1-.45 1-1v-7h7c.55 0 1-.45 1-1s-.45-1-1-1z"
-          fill="white"
-        />
-      </svg>
-    `)}`,
-    scaledSize: new google.maps.Size(36, 52),
-    anchor: new google.maps.Point(18, 52),
-    labelOrigin: new google.maps.Point(18, 18)
-  };
-};
-
-/**
- * Checks if a location is inside any danger zone
+ * Checks if coordinates are within any danger zone
  */
 export const checkIfInDangerZone = (
-  lat: number, 
-  lng: number, 
+  lat: number,
+  lng: number,
   dangerZones: DangerZone[]
 ): DangerZone | null => {
-  // Calculate distance between two points using Haversine formula
-  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-    const R = 6371000; // Earth radius in meters
-    const φ1 = (lat1 * Math.PI) / 180;
-    const φ2 = (lat2 * Math.PI) / 180;
-    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-    const Δλ = ((lng2 - lng1) * Math.PI) / 180;
-
-    const a =
-      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-  };
-
-  // Check each zone
   for (const zone of dangerZones) {
-    const distance = calculateDistance(lat, lng, zone.lat, zone.lng);
+    const distance = getDistanceFromLatLonInMeters(lat, lng, zone.lat, zone.lng);
     if (distance <= zone.radius) {
       return zone;
     }
   }
-
   return null;
 };
 
-/**
- * Get high precision options for geolocation
- */
-export const getHighPrecisionOptions = (): PositionOptions => {
-  return {
-    enableHighAccuracy: true,
-    timeout: 15000,
-    maximumAge: 0
-  };
+// Calculate distance between two points using Haversine formula
+export const calculateDistance = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number => {
+  const R = 6371e3; // Earth radius in meters
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // Distance in meters
 };
 
-/**
- * Create a smooth zoom animation effect for the map
- */
-export const smoothZoomTo = (map: google.maps.Map, zoom: number, duration = 500): void => {
-  if (!map) return;
+// Calculate distance between two points in meters
+const getDistanceFromLatLonInMeters = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number => {
+  const R = 6371; // Radius of the earth in km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lat2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c * 1000; // Distance in meters
+  return distance;
+};
+
+// Convert degrees to radians
+const deg2rad = (deg: number): number => {
+  return deg * (Math.PI / 180);
+};
+
+// Format coordinates for sharing
+export const formatLocationForSharing = (lat: number, lng: number): string => {
+  return `${lat.toFixed(6)},${lng.toFixed(6)}`;
+};
+
+// Create Google Maps URL from coordinates
+export const createGoogleMapsUrl = (lat: number, lng: number): string => {
+  return `https://www.google.com/maps?q=${lat},${lng}`;
+};
+
+// Create panic mode SMS message
+export const createPanicMessage = (
+  name: string, 
+  lat: number, 
+  lng: number,
+  address?: string
+): string => {
+  const locationUrl = createGoogleMapsUrl(lat, lng);
+  const addressText = address ? `near ${address}` : '';
   
-  const startZoom = map.getZoom() || 0;
-  const steps = 15;
-  const stepDuration = duration / steps;
-  let currentStep = 0;
+  return `EMERGENCY ALERT: ${name} needs help! Current location ${addressText}: ${locationUrl}`;
+};
+
+/**
+ * Helper function to get a more accurate location using multiple readings
+ * This is useful for improving GPS accuracy
+ */
+export const getMoreAccuratePosition = async (
+  maxWait = 10000, 
+  desiredAccuracy = 20,
+  maxRetries = 5
+): Promise<GeolocationPosition> => {
+  return new Promise((resolve, reject) => {
+    // Initialize variables
+    let bestPosition: GeolocationPosition | null = null;
+    let tryCount = 0;
+    let timeoutId: number | null = null;
+    let watchId: number | null = null;
+    
+    // Time when we started this process
+    const startTime = Date.now();
+    
+    // Clear everything
+    const cleanup = () => {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      if (timeoutId !== null) clearTimeout(timeoutId);
+    };
+    
+    // Set timeout - we can't wait forever
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      // If we have a position with reasonable accuracy, return it
+      if (bestPosition && bestPosition.coords.accuracy <= 100) {
+        resolve(bestPosition);
+      } else if (bestPosition) {
+        // Return whatever we have, even if not great
+        resolve(bestPosition);
+      } else {
+        reject(new Error("Location timeout - couldn't get an accurate reading"));
+      }
+    }, maxWait);
+    
+    // Start watching position
+    watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        tryCount++;
+        console.log(`Location attempt ${tryCount}, accuracy: ${position.coords.accuracy}m`);
+        
+        // If this is our first position or it's more accurate than the previous best
+        if (!bestPosition || position.coords.accuracy < bestPosition.coords.accuracy) {
+          bestPosition = position;
+        }
+        
+        // If we reached desired accuracy or max retries, we're done
+        if (position.coords.accuracy <= desiredAccuracy || tryCount >= maxRetries) {
+          cleanup();
+          resolve(position);
+        }
+        
+        // If we've waited too long but have a decent position, stop
+        if (Date.now() - startTime > maxWait * 0.8 && bestPosition && bestPosition.coords.accuracy <= 50) {
+          cleanup();
+          resolve(bestPosition);
+        }
+      },
+      (error) => {
+        cleanup();
+        reject(error);
+      },
+      { 
+        enableHighAccuracy: true,
+        timeout: maxWait * 0.8,
+        maximumAge: 0
+      }
+    );
+  });
+};
+
+/**
+ * Enhance accuracy indication beyond just meters
+ * Returns a rating and text description of the accuracy level
+ */
+export const getAccuracyRating = (
+  accuracy: number | undefined
+): { rating: 'excellent' | 'good' | 'fair' | 'poor' | 'unknown', text: string } => {
+  if (accuracy === undefined) return { rating: 'unknown', text: 'Unknown' };
   
-  const intervalId = setInterval(() => {
-    currentStep++;
-    
-    if (currentStep >= steps) {
-      clearInterval(intervalId);
-      map.setZoom(zoom);
-      return;
-    }
-    
-    const progress = currentStep / steps;
-    const newZoom = startZoom + (zoom - startZoom) * easeInOutCubic(progress);
-    map.setZoom(Math.floor(newZoom));
-  }, stepDuration);
+  if (accuracy <= 5) return { rating: 'excellent', text: 'Excellent (±5m)' };
+  if (accuracy <= 20) return { rating: 'good', text: 'Good (±20m)' };
+  if (accuracy <= 100) return { rating: 'fair', text: 'Fair (±100m)' };
+  return { rating: 'poor', text: `Poor (±${Math.round(accuracy)}m)` };
 };
 
-/**
- * Easing function for smooth animations
- */
-const easeInOutCubic = (t: number): number => {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+// Smooth zoom effect
+export const smoothZoomTo = (map: google.maps.Map, targetZoom: number): void => {
+  const currentZoom = map.getZoom() || 0;
+  if (currentZoom !== targetZoom) {
+    // If we're zooming in, zoom in all the way in small increments
+    const zoomAnimationStep = () => {
+      const currentZoomLevel = map.getZoom() || 0;
+      if (targetZoom > currentZoomLevel) {
+        map.setZoom(currentZoomLevel + 1);
+        setTimeout(zoomAnimationStep, 80);
+      }
+    };
+    zoomAnimationStep();
+  }
 };
 
-/**
- * Calculate the current time of day to select appropriate map style
- */
+// Get time of day for theming
 export const getTimeOfDay = (): 'day' | 'night' | 'twilight' => {
   const hour = new Date().getHours();
-  if (hour >= 6 && hour < 18) return 'day';
-  if ((hour >= 5 && hour < 6) || (hour >= 18 && hour < 19)) return 'twilight';
-  return 'night';
+  
+  if (hour >= 6 && hour < 17) {
+    return 'day';
+  } else if (hour >= 17 && hour < 20) {
+    return 'twilight';
+  } else {
+    return 'night';
+  }
+};
+
+// Add refresh visual effect to map
+export const addRefreshEffect = (map: google.maps.Map): void => {
+  const originalZoom = map.getZoom() || 0;
+  
+  // Flash effect by slightly changing the zoom and restoring
+  map.setZoom(originalZoom - 0.5);
+  
+  setTimeout(() => {
+    map.setZoom(originalZoom);
+  }, 150);
 };
 
 /**
- * Add visual effects to map when refreshing location
+ * Track user's live location and update the marker on map
+ * Returns a cleanup function to stop tracking when needed
  */
-export const addRefreshEffect = (map: google.maps.Map | null): void => {
-  if (!map) return;
-  
-  const originalZoom = map.getZoom() || 15;
-  
-  // Quick zoom out and in effect
-  const zoomEffect = async () => {
-    if (map.getZoom() && map.getZoom()! > 14) {
-      map.setZoom(map.getZoom()! - 1);
-      await new Promise(resolve => setTimeout(resolve, 150));
-      map.setZoom(originalZoom);
+export const trackLiveLocation = (
+  map: google.maps.Map,
+  onLocationUpdate?: (location: Location) => void,
+  onError?: (error: GeolocationPositionError) => void
+): () => void => {
+  let marker: google.maps.Marker | null = null;
+  let accuracyCircle: google.maps.Circle | null = null;
+
+  // Initialize heading tracking
+  let currentHeading: number | undefined = undefined;
+  const deviceOrientationHandler = (event: DeviceOrientationEvent) => {
+    // Alpha is the compass direction the device is facing in degrees
+    if (event.alpha !== null) {
+      currentHeading = event.alpha;
+      updateLocationMarker({ lat: 0, lng: 0, heading: currentHeading });
     }
   };
-  
-  zoomEffect();
-};
 
-/**
- * Request location permission explicitly and return status
- */
-export const requestLocationPermission = async (): Promise<'granted' | 'denied' | 'prompt'> => {
-  // Check if the browser supports the Permissions API
-  if (navigator.permissions && navigator.permissions.query) {
-    try {
-      const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
-      console.log(`Location permission status: ${permissionStatus.state}`);
+  // Try to start device orientation tracking if available
+  if (window.DeviceOrientationEvent) {
+    window.addEventListener('deviceorientation', deviceOrientationHandler);
+  }
 
-      // Return the permission state
-      return permissionStatus.state as 'granted' | 'denied' | 'prompt';
-    } catch (error) {
-      console.error('Error querying location permission:', error);
+  // Watch position with high accuracy
+  const watchId = navigator.geolocation.watchPosition(
+    (position) => {
+      const { latitude, longitude, accuracy, heading } = position.coords;
+      
+      // If device doesn't provide heading but we have one from device orientation
+      const finalHeading = heading || currentHeading;
+      
+      // Update the marker on the map
+      updateLocationMarker({
+        lat: latitude,
+        lng: longitude,
+        heading: finalHeading,
+        accuracy: accuracy
+      });
+      
+      // Call the callback if provided
+      if (onLocationUpdate) {
+        onLocationUpdate({
+          lat: latitude,
+          lng: longitude,
+          heading: finalHeading,
+          accuracy: accuracy
+        });
+      }
+    },
+    (error) => {
+      console.error('Geolocation error:', error);
+      if (onError) onError(error);
+    },
+    getHighPrecisionOptions()
+  );
+
+  // Function to update or create the location marker
+  function updateLocationMarker(location: Location) {
+    const position = new google.maps.LatLng(location.lat, location.lng);
+    
+    // Create or update the accuracy circle
+    if (!accuracyCircle && location.accuracy) {
+      accuracyCircle = new google.maps.Circle({
+        strokeColor: '#4285F4',
+        strokeOpacity: 0.2,
+        strokeWeight: 1,
+        fillColor: '#4285F4',
+        fillOpacity: 0.1,
+        map,
+        center: position,
+        radius: location.accuracy
+      });
+    } else if (accuracyCircle && location.accuracy) {
+      accuracyCircle.setCenter(position);
+      accuracyCircle.setRadius(location.accuracy);
+    }
+
+    // Create or update the marker
+    if (!marker) {
+      const markerIcon = {
+        url: 'data:image/svg+xml;charset=UTF-8,' + 
+              encodeURIComponent(createLocationSvg(location.heading)),
+        scaledSize: new google.maps.Size(48, 48),
+        anchor: new google.maps.Point(24, 24),
+      };
+      
+      marker = new google.maps.Marker({
+        position,
+        map,
+        icon: markerIcon,
+        optimized: true,
+        zIndex: 999
+      });
+    } else {
+      marker.setPosition(position);
+      
+      if (location.heading !== undefined) {
+        // Update marker icon with new heading
+        marker.setIcon({
+          url: 'data:image/svg+xml;charset=UTF-8,' + 
+                encodeURIComponent(createLocationSvg(location.heading)),
+          scaledSize: new google.maps.Size(48, 48),
+          anchor: new google.maps.Point(24, 24),
+        });
+      }
     }
   }
-  
-  // If Permissions API is not supported, fall back to manual checking
-  if (navigator.geolocation) {
-    return new Promise((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        () => resolve('granted'),
-        (error) => {
-          if (error.code === 1) { // PERMISSION_DENIED
-            resolve('denied');
-          } else {
-            resolve('prompt');
-          }
-        },
-        { timeout: 10000, maximumAge: 60000 }
-      );
-    });
-  }
-  
-  return 'denied'; // Geolocation API not available
+
+  // Return cleanup function
+  return () => {
+    navigator.geolocation.clearWatch(watchId);
+    if (window.DeviceOrientationEvent) {
+      window.removeEventListener('deviceorientation', deviceOrientationHandler);
+    }
+    if (marker) marker.setMap(null);
+    if (accuracyCircle) accuracyCircle.setMap(null);
+  };
 };
 
 /**
- * Check if browser supports geolocation
+ * Centers the map on current location with smooth animation
  */
-export const isGeolocationSupported = (): boolean => {
-  return 'geolocation' in navigator;
+export const centerMapOnCurrentLocation = async (
+  map: google.maps.Map,
+  animate: boolean = true
+): Promise<Location> => {
+  try {
+    const position = await getCurrentPosition(getHighPrecisionOptions());
+    const { latitude, longitude, heading } = position.coords;
+    const location: Location = { 
+      lat: latitude, 
+      lng: longitude, 
+      heading: heading !== null ? heading : undefined 
+    };
+    
+    if (animate) {
+      map.panTo(new google.maps.LatLng(latitude, longitude));
+    } else {
+      map.setCenter(new google.maps.LatLng(latitude, longitude));
+    }
+    
+    return location;
+  } catch (error) {
+    console.error("Error getting current location:", error);
+    throw error;
+  }
 };

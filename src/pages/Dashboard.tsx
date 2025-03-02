@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleMap, LoadScript, Marker, DirectionsService, DirectionsRenderer, useJsApiLoader, Autocomplete, InfoWindow } from '@react-google-maps/api';
-import { AlertTriangle, Phone, Navigation, Home, Menu, X, Plus, Shield, Bell, Heart, Map, Settings, LogOut, Users, Compass, Crosshair, AlertOctagon } from 'lucide-react';
-import { createLocationSvg, getCurrentPosition, checkIfInDangerZone, createFallbackMarker, getHighPrecisionOptions, smoothZoomTo, getTimeOfDay, addRefreshEffect, createDangerMarker, createPulsingDot, createDestinationMarker, requestLocationPermission } from '../utils/LocationUtil';
+import { AlertTriangle, Phone, Navigation, Home, Menu, X, Plus, Shield, Bell, Heart, Map, Settings, LogOut, Users, Compass, Crosshair, AlertOctagon, Sun, Moon, MapPin, Layers } from 'lucide-react';
+import { createLocationSvg, getCurrentPosition, checkIfInDangerZone, createFallbackMarker, getHighPrecisionOptions, smoothZoomTo, getTimeOfDay, addRefreshEffect, createDangerMarker, createPulsingDot, createDestinationMarker, trackLiveLocation, centerMapOnCurrentLocation } from '../utils/LocationUtil';
 import { Contact, DangerZone, Location, MapStyles } from '../types/types';
 import { getMapStyle } from '../styles/mapStyles';
 
@@ -54,6 +54,9 @@ const SafetyDashboard: React.FC = () => {
   const [panicMode, setPanicMode] = useState<boolean>(false);
   const [panicCountdown, setPanicCountdown] = useState<number | null>(null);
   const panicTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Add missing trackingCleanup state
+  const [trackingCleanup, setTrackingCleanup] = useState<(() => void) | null>(null);
 
   // Enhanced location tracking state
   const [locationInitialized, setLocationInitialized] = useState<boolean>(false);
@@ -61,18 +64,18 @@ const SafetyDashboard: React.FC = () => {
   const highPrecisionLocationOptions = getHighPrecisionOptions();
 
   // Enhanced map state 
+  const [mapMode, setMapMode] = useState<'day' | 'night' | 'twilight'>(getTimeOfDay());
   const [mapZoomLevel, setMapZoomLevel] = useState<number>(16);
   const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
   const [mapBoundsChanged, setMapBoundsChanged] = useState<boolean>(false);
   const [isLocationRefreshing, setIsLocationRefreshing] = useState<boolean>(false);
+  const [mapTiltValue, setMapTiltValue] = useState<number>(0); // 0-45 degrees
+  const [mapHeadingValue, setMapHeadingValue] = useState<number>(0); // 0-360 degrees
+  const [showBuildings3D, setShowBuildings3D] = useState<boolean>(false);
 
   // New state for info windows
   const [selectedZone, setSelectedZone] = useState<DangerZone | null>(null);
   const [showEnhancedVisuals, setShowEnhancedVisuals] = useState<boolean>(false); // Changed default to false to hide circles
-
-  // Add location permission state
-  const [locationPermission, setLocationPermission] = useState<'granted' | 'denied' | 'prompt'>('prompt');
-  const [showPermissionPrompt, setShowPermissionPrompt] = useState<boolean>(false);
 
   // Use the useJsApiLoader hook to properly load the Google Maps API with places library
   const { isLoaded, loadError } = useJsApiLoader({
@@ -124,26 +127,37 @@ const SafetyDashboard: React.FC = () => {
     }
   };
 
-  // Enhanced get current location function with forced refresh option and visual effects
+  // Enhanced get current location function with better error handling
   const fetchAndUpdateLocation = useCallback(async (zoomIn: boolean = false, forceRefresh: boolean = false) => {
     try {
-      // Check permission first
-      const permissionStatus = await requestLocationPermission();
-      setLocationPermission(permissionStatus);
-      
-      if (permissionStatus === 'denied') {
-        setLocationError("Location access denied. Please enable location services to use live tracking features.");
-        setShowPermissionPrompt(true);
-        return null;
-      }
-
       setLocationError(null);
       setIsLocationRefreshing(true);
       console.log(`Attempting to get current position (forced: ${forceRefresh})...`);
       
-      const position = await getCurrentPosition({
-        ...highPrecisionLocationOptions,
-        maximumAge: forceRefresh ? 0 : highPrecisionLocationOptions.maximumAge,
+      if (!navigator.geolocation) {
+        throw new Error("Geolocation is not supported by your browser");
+      }
+      
+      // Wrap getCurrentPosition in a promise with timeout handling
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error("Location request timed out. Please try again."));
+        }, 10000); // 10 second timeout
+        
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            clearTimeout(timeoutId);
+            resolve(position);
+          },
+          (error) => {
+            clearTimeout(timeoutId);
+            reject(error);
+          },
+          {
+            ...highPrecisionLocationOptions,
+            maximumAge: forceRefresh ? 0 : highPrecisionLocationOptions.maximumAge,
+          }
+        );
       });
       
       const newLocation = {
@@ -191,15 +205,37 @@ const SafetyDashboard: React.FC = () => {
       // Update to use pointer style markers instead of circles
       setSelectedZone(null); // Close any open info windows when refreshing location
 
-      // Close any permission prompt if successful
-      setShowPermissionPrompt(false);
-
       return newLocation;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error getting location:", error);
-      setLocationError("Unable to access your location. Please check your device settings and try again.");
-      setShowPermissionPrompt(true);
+      
+      // Provide specific error messages based on the error code
+      let errorMessage = "Unable to access your location.";
+      if (error instanceof GeolocationPositionError) {
+        switch(error.code) {
+          case 1: // PERMISSION_DENIED
+            errorMessage = "Location permission denied. Please enable location services in your browser/device settings and reload the page.";
+            break;
+          case 2: // POSITION_UNAVAILABLE
+            errorMessage = "Location information is unavailable. Please check your device's GPS or try again later.";
+            break;
+          case 3: // TIMEOUT
+            errorMessage = "Location request timed out. Please check your connection and try again.";
+            break;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setLocationError(errorMessage);
       setIsLocationRefreshing(false);
+      
+      // Use fallback location if we can't get the real one
+      if (!locationInitialized) {
+        console.log("Using fallback location since we couldn't get the real one");
+        // Keep using the default location that was set in state initially
+      }
+      
       return null;
     }
   }, [dangerZones, locationWatchActive]);
@@ -258,13 +294,13 @@ const SafetyDashboard: React.FC = () => {
           // Provide more specific error messages based on the error code
           switch(error.code) {
             case 1: // PERMISSION_DENIED
-              errorMessage = "Location permission denied. Please enable location services in your browser settings.";
+              errorMessage = "Location access denied. Please check your browser/device settings to enable location services for this app.";
               break;
             case 2: // POSITION_UNAVAILABLE
-              errorMessage = "Location information is unavailable. Please check your device's GPS.";
+              errorMessage = "Location information unavailable. Please check your device's GPS or try again in a different area.";
               break;
             case 3: // TIMEOUT
-              errorMessage = "Location request timed out. Please try again.";
+              errorMessage = "Location request timed out. Please check your internet connection and try again.";
               break;
           }
           
@@ -302,8 +338,35 @@ const SafetyDashboard: React.FC = () => {
       fetchAndUpdateLocation(true, true);
     }
   }, [liveTracking, fetchAndUpdateLocation]);
+  
+  // Toggle 3D buildings mode
+  const toggle3DBuildings = useCallback(() => {
+    setShowBuildings3D(prev => !prev);
+    if (mapRef.current) {
+      setTimeout(() => {
+        // Apply tilt when enabling 3D buildings
+        if (!showBuildings3D) {
+          setMapTiltValue(45);
+        } else {
+          setMapTiltValue(0);
+        }
+      }, 100);
+    }
+  }, [showBuildings3D]);
 
-  // Enhanced map load handler with initial location check
+  // Change map visualization mode (day/night/twilight)
+  const cycleMapMode = useCallback(() => {
+    setMapMode(prevMode => {
+      switch (prevMode) {
+        case 'day': return 'night';
+        case 'night': return 'twilight';
+        case 'twilight': return 'day';
+        default: return 'day';
+      }
+    });
+  }, []);
+
+  // Enhanced map load handler with initial location check and live tracking setup
   const handleMapLoad = useCallback((map: google.maps.Map) => {
     console.log('Map loaded successfully');
     mapRef.current = map;
@@ -317,6 +380,48 @@ const SafetyDashboard: React.FC = () => {
       fetchAndUpdateLocation(true, true);
     }
     
+    // Initialize live location tracking
+    if (liveTracking) {
+      const cleanup = trackLiveLocation(
+        map,
+        (location) => {
+          console.log("Live location update:", location);
+          setCurrentLocation(location);
+          setLocationInitialized(true);
+          setLocationError(null);
+          
+          // Check if in danger zone
+          const dangerZone = checkIfInDangerZone(location.lat, location.lng, dangerZones);
+          if (dangerZone) {
+            console.log(`Currently in danger zone: ${dangerZone.name}`);
+          }
+        },
+        (error) => {
+          console.error("Error tracking location:", error);
+          let errorMessage = "Unable to track your location.";
+          
+          switch(error.code) {
+            case 1: // PERMISSION_DENIED
+              errorMessage = "Location access denied. Please check your browser/device settings to enable location services for this app.";
+              break;
+            case 2: // POSITION_UNAVAILABLE
+              errorMessage = "Location information unavailable. Please check your device's GPS or try again in a different area.";
+              break;
+            case 3: // TIMEOUT
+              errorMessage = "Location request timed out. Please check your internet connection and try again.";
+              break;
+          }
+          
+          setLocationError(errorMessage);
+          setLocationWatchActive(false);
+        }
+      );
+      
+      // Save cleanup function
+      setTrackingCleanup(() => cleanup);
+      setLocationWatchActive(true);
+    }
+    
     // Add advanced event listeners for enhanced map experience
     map.addListener('idle', () => {
       console.log('Map idle, center:', map.getCenter()?.toJSON());
@@ -327,33 +432,126 @@ const SafetyDashboard: React.FC = () => {
         setMapZoomLevel(newZoom);
       }
     });
-  }, [currentLocation, fetchAndUpdateLocation, mapZoomLevel]);
+
+    // Add fancy tilt listener
+    map.addListener('tilt_changed', () => {
+      setMapTiltValue(map.getTilt() || 0);
+    });
+  }, [currentLocation, fetchAndUpdateLocation, mapZoomLevel, liveTracking, dangerZones]);
   
-  // Handle live location button click - force refresh with enhanced visuals
+  // Manage live tracking with our new function
+  useEffect(() => {
+    if (!mapRef.current || !isLoaded) return;
+    
+    // Clean up any existing tracking
+    if (trackingCleanup) {
+      trackingCleanup();
+      setTrackingCleanup(null);
+      setLocationWatchActive(false);
+    }
+    
+    // Start new tracking if enabled
+    if (liveTracking) {
+      console.log('Starting new live location tracking...');
+      const cleanup = trackLiveLocation(
+        mapRef.current,
+        (location) => {
+          console.log("Live location update:", location);
+          setCurrentLocation(location);
+          setLocationInitialized(true);
+          setLocationError(null);
+          
+          // Check if in danger zone
+          const dangerZone = checkIfInDangerZone(location.lat, location.lng, dangerZones);
+          if (dangerZone) {
+            console.log(`Currently in danger zone: ${dangerZone.name}`);
+          }
+        },
+        (error) => {
+          console.error("Error tracking location:", error);
+          let errorMessage = "Unable to track your location.";
+          
+          switch(error.code) {
+            case 1: // PERMISSION_DENIED
+              errorMessage = "Location access denied. Please check your browser/device settings to enable location services for this app.";
+              break;
+            case 2: // POSITION_UNAVAILABLE
+              errorMessage = "Location information unavailable. Please check your device's GPS or try again in a different area.";
+              break;
+            case 3: // TIMEOUT
+              errorMessage = "Location request timed out. Please check your internet connection and try again.";
+              break;
+          }
+          
+          setLocationError(errorMessage);
+          setLocationWatchActive(false);
+        }
+      );
+      
+      setTrackingCleanup(() => cleanup);
+      setLocationWatchActive(true);
+    }
+    
+    return () => {
+      // Clean up tracking when component unmounts or when effect re-runs
+      if (trackingCleanup) {
+        trackingCleanup();
+      }
+    };
+  }, [liveTracking, isLoaded, dangerZones]);
+
+  // Handle live location button click - now using centerMapOnCurrentLocation
   const handleRefreshLocation = useCallback(() => {
     console.log('Forcing location refresh with visual effects...');
-    fetchAndUpdateLocation(true, true); // zoom in and force refresh
+    
+    if (mapRef.current) {
+      // Use our new function
+      centerMapOnCurrentLocation(mapRef.current, true)
+        .then(location => {
+          setCurrentLocation(location);
+          setLocationInitialized(true);
+          
+          // Add zoom effect
+          if (mapRef.current) {
+            smoothZoomTo(mapRef.current, 19);
+            setMapZoomLevel(19);
+            addRefreshEffect(mapRef.current);
+          }
+        })
+        .catch(error => {
+          console.error("Error refreshing location:", error);
+          fetchAndUpdateLocation(true, true); // Fallback to the old method
+        });
+    } else {
+      fetchAndUpdateLocation(true, true);
+    }
   }, [fetchAndUpdateLocation]);
 
   // Apply map style based on selected mode
   useEffect(() => {
     if (mapRef.current) {
       mapRef.current.setOptions({
-        styles: getMapStyle('day') // Always use day mode
+        styles: getMapStyle(mapMode),
+        tilt: mapTiltValue
       });
     }
-  }, []);
+  }, [mapMode, mapTiltValue]);
 
-  // Handle permission request
-  const handleRequestPermission = useCallback(async () => {
-    const status = await requestLocationPermission();
-    setLocationPermission(status);
+  // Auto-update map mode based on time of day
+  useEffect(() => {
+    const checkTimeAndUpdateMode = () => {
+      const currentTimeOfDay = getTimeOfDay();
+      setMapMode(currentTimeOfDay);
+    };
     
-    if (status === 'granted') {
-      setShowPermissionPrompt(false);
-      fetchAndUpdateLocation(true, true);
-    }
-  }, [fetchAndUpdateLocation]);
+    // Check initially
+    checkTimeAndUpdateMode();
+    
+    // Set up interval to check every hour
+    const intervalId = setInterval(checkTimeAndUpdateMode, 60 * 60 * 1000);
+    
+    return () => clearInterval(intervalId);
+  }, []);
 
   // Mock function to trigger SOS
   const triggerSOS = () => {
@@ -569,7 +767,15 @@ const SafetyDashboard: React.FC = () => {
   }, []);
   
   function handleFromPlaceChanged(): void {
-    throw new Error('Function not implemented.');
+    if (fromAutocompleteRef.current) {
+      const place = fromAutocompleteRef.current.getPlace();
+      if (place.geometry && place.geometry.location) {
+        setFromLocation({
+          lat: place.geometry.location.lat(),
+          lng: place.geometry.location.lng()
+        });
+      }
+    }
   }
 
   function handleToPlaceChanged(): void {
@@ -587,6 +793,35 @@ const SafetyDashboard: React.FC = () => {
   // Enhanced marker click handler for showing info windows
   const handleMarkerClick = useCallback((zone: DangerZone) => {
     setSelectedZone(zone);
+  }, []);
+
+  // Add a helper function to guide users through location permission troubleshooting
+  const showLocationTroubleshootingGuide = useCallback(() => {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isAndroid = /Android/.test(navigator.userAgent);
+    const isFirefox = /Firefox/.test(navigator.userAgent);
+    const isChrome = /Chrome/.test(navigator.userAgent) && !/Edge/.test(navigator.userAgent);
+    const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
+    
+    let instructions = "To enable location services:";
+    
+    if (isIOS) {
+      instructions += "\n\n• Go to Settings > Privacy > Location Services\n• Enable Location Services\n• Find this app/browser in the list and select 'While Using the App'";
+    } else if (isAndroid) {
+      instructions += "\n\n• Go to Settings > Location\n• Turn on 'Use location'\n• Open browser settings and enable site permissions for location";
+    } else {
+      if (isChrome) {
+        instructions += "\n\n• Click the lock/info icon in the address bar\n• Check that Location permission is set to 'Allow'\n• If not, change the setting and refresh the page";
+      } else if (isFirefox) {
+        instructions += "\n\n• Click the info icon in the address bar\n• Go to Permissions > Access Your Location > Allow\n• Refresh the page";
+      } else if (isSafari) {
+        instructions += "\n\n• Go to Safari > Preferences > Websites > Location\n• Find this website and select 'Allow'\n• Refresh the page";
+      } else {
+        instructions += "\n\n• Check your browser settings to allow location access\n• Look for site permissions or privacy settings\n• Refresh the page after enabling location";
+      }
+    }
+    
+    alert(instructions);
   }, []);
 
   return (
@@ -648,20 +883,7 @@ const SafetyDashboard: React.FC = () => {
                 <span>Settings</span>
               </div>
             </li>
-            <li className="p-3 rounded-lg cursor-pointer text-purple-300 hover:bg-purple-800 hover:text-white transition-all">
-              <div className="flex items-center">
-                <LogOut size={18} className="mr-3" />
-                <span>Sign Out</span>
-              </div>
-            </li>
           </ul>
-          
-          <div className="absolute bottom-4 left-0 right-0 p-4">
-            <button className="flex items-center justify-center w-full py-2 px-4 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-all">
-              <LogOut size={16} className="mr-2" />
-              <span>Sign Out</span>
-            </button>
-          </div>
         </div>
       </div>
       
@@ -813,13 +1035,15 @@ const SafetyDashboard: React.FC = () => {
                     zoom={mapZoomLevel}
                     onLoad={handleMapLoad}
                     options={{
-                      styles: getMapStyle('day'), // Always use day style
+                      styles: getMapStyle(mapMode),
                       streetViewControl: false, // Disabled for cleaner UI
                       mapTypeControl: false,
                       fullscreenControl: false, // Disabled for cleaner UI
                       zoomControl: false, // We'll use custom controls
                       rotateControl: false, // Disabled for cleaner UI
-                      mapTypeId: 'roadmap',
+                      tilt: mapTiltValue,
+                      heading: mapHeadingValue,
+                      mapTypeId: showBuildings3D ? 'satellite' : 'roadmap',
                       mapId: "8e0a97af9386fef",
                       disableDefaultUI: false,
                       clickableIcons: true,
@@ -828,6 +1052,8 @@ const SafetyDashboard: React.FC = () => {
                     onClick={() => setSelectedZone(null)} // Close info window when clicking map
                   >
                     {/* Current Location Marker - Enhanced visibility */}
+                    {/* Remove the standalone current location marker, as it's now handled by trackLiveLocation */}
+                    {/* We don't need this anymore since trackLiveLocation creates the marker:
                     <Marker
                       position={currentLocation}
                       icon={createLocationMarkerIcon()}
@@ -835,9 +1061,10 @@ const SafetyDashboard: React.FC = () => {
                         locationMarkerRef.current = marker;
                         console.log("Marker loaded:", marker);
                       }}
-                      zIndex={1000} // Ensure location marker is always on top
+                      zIndex={1000}
                       animation={window.google?.maps?.Animation?.DROP}
-                    />
+                    /> 
+                    */}
                     
                     {/* Removed all circle elements */}
                     
@@ -930,43 +1157,39 @@ const SafetyDashboard: React.FC = () => {
                   </div>
                 )}
                 
-                {/* Location Permission Prompt */}
-                {showPermissionPrompt && (
-                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white p-6 rounded-xl shadow-2xl max-w-md w-full z-20">
-                    <div className="flex items-center justify-center mb-4">
-                      <AlertTriangle size={48} className="text-yellow-500" />
-                    </div>
-                    <h3 className="text-xl font-bold text-center mb-3">Location Access Required</h3>
-                    <p className="text-gray-600 mb-6 text-center">
-                      This app needs access to your location to provide safety features and real-time tracking.
-                    </p>
-                    <div className="flex space-x-4">
-                      <button
-                        onClick={() => setShowPermissionPrompt(false)}
-                        className="flex-1 py-2 px-4 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium transition-all"
-                      >
-                        Not Now
-                      </button>
-                      <button
-                        onClick={handleRequestPermission}
-                        className="flex-1 py-2 px-4 bg-blue-500 text-white hover:bg-blue-600 rounded-lg font-medium transition-all"
-                      >
-                        Allow Location
-                      </button>
-                    </div>
-                  </div>
-                )}
-                
                 {/* Location error indicator with retry button */}
-                {locationError && !showPermissionPrompt && (
-                  <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded-lg flex items-center shadow-md max-w-sm">
-                    <AlertTriangle size={16} className="mr-2 flex-shrink-0" />
-                    <span className="text-sm flex-grow">{locationError}</span>
+                {locationError && (
+                  <div className="absolute top-4 right-4 left-4 md:left-auto bg-red-500 text-white px-6 py-4 rounded-lg flex items-start shadow-lg max-w-md">
+                    <AlertTriangle size={20} className="mr-3 flex-shrink-0 mt-1" />
+                    <div className="flex-grow">
+                      <p className="font-medium mb-2">{locationError}</p>
+                      <div className="flex space-x-2 mt-2">
+                        <button 
+                          onClick={showLocationTroubleshootingGuide}
+                          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-md text-sm transition-all"
+                        >
+                          Show Help
+                        </button>
+                        <button 
+                          onClick={() => window.location.reload()}
+                          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-md text-sm transition-all"
+                        >
+                          Refresh Page
+                        </button>
+                        <button 
+                          onClick={handleRefreshLocation}
+                          className="px-3 py-1.5 bg-white text-red-600 hover:bg-red-100 rounded-md text-sm transition-all flex items-center"
+                        >
+                          <Crosshair size={14} className="mr-1.5" />
+                          Try Again
+                        </button>
+                      </div>
+                    </div>
                     <button 
-                      onClick={handleRefreshLocation}
-                      className="ml-2 p-1 bg-white rounded-full flex-shrink-0"
+                      onClick={() => setLocationError(null)}
+                      className="p-1 ml-2 flex-shrink-0 hover:text-red-200 transition-all"
                     >
-                      <Crosshair size={16} className="text-red-500" />
+                      <X size={18} />
                     </button>
                   </div>
                 )}
@@ -981,7 +1204,7 @@ const SafetyDashboard: React.FC = () => {
                   </div>
                 )}
                 
-                {/* Simplified Control Overlay - Only essential buttons */}
+                {/* Improved Control Overlay - Positioned in floating card at bottom-center for better reachability */}
                 <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-white bg-opacity-90 rounded-full shadow-lg flex items-center px-2 py-1 space-x-1">
                   {/* Live Location Button */}
                   <button 
@@ -1003,9 +1226,27 @@ const SafetyDashboard: React.FC = () => {
                   >
                     <Compass size={20} />
                   </button>
+                  
+                  {/* Map Mode Toggle Button */}
+                  <button 
+                    onClick={cycleMapMode}
+                    className="p-3 rounded-full hover:bg-indigo-500 hover:text-white transition-all"
+                    title={`Current: ${mapMode} mode - Click to change`}
+                  >
+                    {mapMode === 'day' ? <Sun size={20} /> : <Moon size={20} />}
+                  </button>
+                  
+                  {/* Toggle 3D Buildings */}
+                  <button 
+                    onClick={toggle3DBuildings}
+                    className={`p-3 rounded-full transition-all ${showBuildings3D ? 'bg-indigo-500 text-white' : 'hover:bg-gray-100'}`}
+                    title={showBuildings3D ? "Switch to 2D view" : "Switch to 3D view"}
+                  >
+                    <Layers size={20} />
+                  </button>
                 </div>
                 
-                {/* Zoom controls remain the same */}
+                {/* Zoom controls - Positioned at right for standard map UI experience */}
                 <div className="absolute top-1/2 right-4 transform -translate-y-1/2 bg-white bg-opacity-90 rounded-lg shadow-lg flex flex-col p-1">
                   <button 
                     onClick={() => {
@@ -1106,66 +1347,7 @@ const SafetyDashboard: React.FC = () => {
               
               {/* Quick Access - Make it smaller or optionally collapse/hide on smaller screens */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                <div className="bg-white rounded-xl shadow-lg p-4 border-l-4 border-purple-500 hover:shadow-xl transition-all">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-bold text-gray-800">Emergency Contacts</h3>
-                    <div className="p-1.5 bg-purple-100 rounded-lg text-purple-600">
-                      <Phone size={14} />
-                    </div>
-                  </div>
-                  <ul className="space-y-2">
-                    {emergencyContacts.slice(0, 2).map(contact => (
-                      <li key={contact.id} className="flex justify-between items-center p-1.5 hover:bg-gray-50 rounded-lg transition-all">
-                        <div className="flex items-center">
-                          <div className="w-6 h-6 rounded-full bg-gradient-to-r from-indigo-400 to-purple-400 flex items-center justify-center text-white font-medium mr-2 text-xs">
-                            {contact.name.charAt(0)}
-                          </div>
-                          <div>
-                            <div className="font-medium text-sm">{contact.name}</div>
-                            <div className="text-xs text-gray-500">{contact.relation}</div>
-                          </div>
-                        </div>
-                        <button className="p-1.5 text-green-600 hover:bg-green-100 rounded-full transition-all">
-                          <Phone size={14} />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  <button 
-                    onClick={() => { setCurrentTab('contacts'); }}
-                    className="w-full mt-2 px-3 py-1.5 text-xs text-center text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-all"
-                  >
-                    View All
-                  </button>
-                </div>
-                <div className="bg-white rounded-xl shadow-lg p-4 border-l-4 border-orange-500 hover:shadow-xl transition-all">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-bold text-gray-800">Nearby Danger Zones</h3>
-                    <div className="p-1.5 bg-orange-100 rounded-lg text-orange-600">
-                      <AlertTriangle size={14} />
-                    </div>
-                  </div>
-                  <ul className="space-y-2">
-                    {dangerZones.slice(0, 2).map(zone => (
-                      <li key={zone.id} className="flex items-center p-1.5 hover:bg-gray-50 rounded-lg transition-all">
-                        <div 
-                          className="w-2 h-2 rounded-full mr-2" 
-                          style={{ backgroundColor: getDangerZoneColor(zone.riskLevel) }}
-                        ></div>
-                        <div>
-                          <div className="font-medium text-sm">{zone.name}</div>
-                          <div className="text-xs text-gray-500 capitalize">{zone.riskLevel} Risk</div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                  <button 
-                    onClick={() => { setCurrentTab('danger-zones'); }}
-                    className="w-full mt-2 px-3 py-1.5 text-xs text-center text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-all"
-                  >
-                    View All
-                  </button>
-                </div>
+                {/* Emergency contacts and danger zones sections removed */}
               </div>
             </div>
           )}
