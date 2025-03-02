@@ -1,1543 +1,1389 @@
-import { useState, useEffect, MouseEvent, useRef, useCallback, useMemo } from "react";
-import {
-  Menu, User, LogOut, AlertCircle, Home, Phone, Clock,
-  Bell, Users, MapPin, Settings, HelpCircle, Share, Shield,
-  AlertTriangle, Navigation, ChevronRight, Heart, X,
-  Plus, Trash2, Send, CheckCircle
-} from "lucide-react";
-import { Link } from "react-router-dom";
-import { useContacts } from '../hooks/useContacts';
-import ContactsList from '../components/ContactsList';
-import { GoogleMap, useJsApiLoader, DirectionsRenderer, Marker, InfoWindow, Circle } from '@react-google-maps/api';
-import SavedRoutesPanel from '../components/SavedRoutesPanel';
-import SaveRouteModal from '../components/SaveRouteModal';
-import { TravelRecommendationService, TravelRoute } from '../services/TravelRecommendationService';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { GoogleMap, LoadScript, Marker, DirectionsService, DirectionsRenderer, useJsApiLoader, Autocomplete, InfoWindow } from '@react-google-maps/api';
+import { AlertTriangle, Phone, Navigation, Home, Menu, X, Plus, Shield, Bell, Heart, Map, Settings, LogOut, Users, Compass, Crosshair, AlertOctagon } from 'lucide-react';
+import { createLocationSvg, getCurrentPosition, checkIfInDangerZone, createFallbackMarker, getHighPrecisionOptions, smoothZoomTo, getTimeOfDay, addRefreshEffect, createDangerMarker, createPulsingDot, createDestinationMarker, requestLocationPermission } from '../utils/LocationUtil';
+import { Contact, DangerZone, Location, MapStyles } from '../types/types';
+import { getMapStyle } from '../styles/mapStyles';
 
-// Add this type definition at the top of the file
-type Priority = "high" | "medium" | "low";
-type LatLngLiteral = google.maps.LatLngLiteral;
-type DirectionsResult = google.maps.DirectionsResult;
-type MapOptions = google.maps.MapOptions;
-type GeofenceStatus = "inside" | "outside" | "unknown";
-type PlaceType = string;
-type SafetyZone = {
-  location: LatLngLiteral;
-  radius: number;
-  level: 'safe' | 'caution' | 'danger';
-  name: string;
-  description?: string;
-};
+// Mock data
+const mockContacts: Contact[] = [
+  { id: '1', name: 'Mom', phone: '555-1234', relation: 'Family' },
+  { id: '2', name: 'Dad', phone: '555-5678', relation: 'Family' },
+  { id: '3', name: 'Emergency Services', phone: '911', relation: 'Emergency' },
+];
 
-const GOOGLE_MAPS_API_KEY = "AIzaSyCTncgg-x65QicwCIqyGJYopp45dMBh74Y";
-const DEFAULT_CENTER = { lat: 28.6139, lng: 77.2090 }; // Delhi coordinates
-const DEFAULT_ZOOM = 13;
-const LIBRARIES: ["places", "geometry"] = ["places", "geometry"];
+const mockDangerZones: DangerZone[] = [
+  { id: '1', name: 'Downtown Alley', radius: 300, lat: 40.7128, lng: -74.006, riskLevel: 'high' },
+  { id: '2', name: 'Park Area', radius: 500, lat: 40.7228, lng: -74.016, riskLevel: 'medium' },
+  { id: '3', name: 'South Station', radius: 200, lat: 40.7028, lng: -74.026, riskLevel: 'low' },
+];
 
-const Dashboard = () => {
+// Google Maps API Key - using the provided key
+const googleMapsApiKey = "AIzaSyCTncgg-x65QicwCIqyGJYopp45dMBh74Y";
+
+// Define libraries for the Google Maps API
+import { Libraries } from '@react-google-maps/api';
+const libraries: Libraries = ['places'];
+
+// Custom map style
+import { mapStyles } from '../styles/mapStyles';
+
+// Component
+const SafetyDashboard: React.FC = () => {
+  const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  const [currentLocation, setCurrentLocation] = useState<Location>({ lat: 40.7128, lng: -74.006 });
+  const [destination, setDestination] = useState<Location | null>(null);
+  const [emergencyContacts, setEmergencyContacts] = useState<Contact[]>(mockContacts);
+  const [dangerZones, setDangerZones] = useState<DangerZone[]>(mockDangerZones);
+  const [showSideMenu, setShowSideMenu] = useState<boolean>(false);
+  const [showContactForm, setShowContactForm] = useState<boolean>(false);
+  const [newContact, setNewContact] = useState<Partial<Contact>>({ name: '', phone: '', relation: '' });
+  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
+  const [mapLoaded, setMapLoaded] = useState<boolean>(false);
+  const [sosActive, setSosActive] = useState<boolean>(false);
+  const [showZoneForm, setShowZoneForm] = useState<boolean>(false);
+  const [newZone, setNewZone] = useState<Partial<DangerZone>>({ name: '', radius: 200, lat: 0, lng: 0, riskLevel: 'medium' });
+  const [liveTracking, setLiveTracking] = useState<boolean>(true); // Start with tracking enabled
+  const [locationWatchId, setLocationWatchId] = useState<number | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [intercityTravel, setIntercityTravel] = useState<boolean>(false);
+  const [fromLocation, setFromLocation] = useState<Location | null>(null);
+  const [toLocation, setToLocation] = useState<Location | null>(null);
+  const fromAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const toAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const [panicMode, setPanicMode] = useState<boolean>(false);
+  const [panicCountdown, setPanicCountdown] = useState<number | null>(null);
+  const panicTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Enhanced location tracking state
+  const [locationInitialized, setLocationInitialized] = useState<boolean>(false);
+  const [locationWatchActive, setLocationWatchActive] = useState<boolean>(false);
+  const highPrecisionLocationOptions = getHighPrecisionOptions();
+
+  // Enhanced map state 
+  const [mapZoomLevel, setMapZoomLevel] = useState<number>(16);
+  const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
+  const [mapBoundsChanged, setMapBoundsChanged] = useState<boolean>(false);
+  const [isLocationRefreshing, setIsLocationRefreshing] = useState<boolean>(false);
+
+  // New state for info windows
+  const [selectedZone, setSelectedZone] = useState<DangerZone | null>(null);
+  const [showEnhancedVisuals, setShowEnhancedVisuals] = useState<boolean>(false); // Changed default to false to hide circles
+
+  // Add location permission state
+  const [locationPermission, setLocationPermission] = useState<'granted' | 'denied' | 'prompt'>('prompt');
+  const [showPermissionPrompt, setShowPermissionPrompt] = useState<boolean>(false);
+
+  // Use the useJsApiLoader hook to properly load the Google Maps API with places library
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    libraries: LIBRARIES
+    googleMapsApiKey: googleMapsApiKey,
+    libraries: libraries
   });
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [userDropdown, setUserDropdown] = useState(false);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [fromAddress, setFromAddress] = useState("");
-  const [toAddress, setToAddress] = useState("");
-  const [routeDisplayed, setRouteDisplayed] = useState<boolean | "loading">(false);
-  const [showNotification, setShowNotification] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
-  const [newContact, setNewContact] = useState<{
-    name: string;
-    phone: string;
-    priority: Priority;
-  }>({ name: "", phone: "", priority: "medium" });
-  const [showAddContact, setShowAddContact] = useState(false);
-  const [alertSent, setAlertSent] = useState<number | null>(null);
-  const [mapCenter, setMapCenter] = useState<LatLngLiteral>(DEFAULT_CENTER);
-  const [safePoints, setSafePoints] = useState<Array<{
-    location: LatLngLiteral;
-    name: string;
-    type: string;
-    vicinity?: string;
-    rating?: number;
-    isOpen?: boolean;
-    photos?: string[];
-    phone?: string;
-    distance?: string;
-  }>>([]);
-  const [safeZones, setSafeZones] = useState<Array<{
-    location: LatLngLiteral;
-    name: string;
-    type: 'safe_zone';
-    description: string;
-    crowdLevel?: 'low' | 'medium' | 'high';
-  }>>([]);
-  const [emergencyServicesLoading, setEmergencyServicesLoading] = useState<boolean>(false);
-  const [selectedSafetyFilters, setSelectedSafetyFilters] = useState<string[]>(['police', 'hospital', 'transit_station']);
-  const [userLocation, setUserLocation] = useState<LatLngLiteral | null>(null);
-  const [selectedLocation, setSelectedLocation] = useState<number | null>(null);
-  const [directionsResponse, setDirectionsResponse] = useState<DirectionsResult | null>(null);
-  const [routeDeviation, setRouteDeviation] = useState<GeofenceStatus>("unknown");
-  const [distance, setDistance] = useState<string>("");
-  const [duration, setDuration] = useState<string>("");
-  const [routePoints, setRoutePoints] = useState<LatLngLiteral[]>([]);
-  const [geofenceRadius, setGeofenceRadius] = useState<number>(50); // 50 meters radius
-  const [deviationAlert, setDeviationAlert] = useState<boolean>(false);
-  const [saveRouteModal, setSaveRouteModal] = useState<boolean>(false);
-  const [routeName, setRouteName] = useState<string>("");
-  const [savedRoutes, setSavedRoutes] = useState<TravelRoute[]>([]);
-  const [travelRecommendationService] = useState<TravelRecommendationService>(
-    new TravelRecommendationService()
-  );
-  const [userAddress, setUserAddress] = useState<string>("");
-  const [isLoadingAddress, setIsLoadingAddress] = useState<boolean>(false);
-  const geocoderRef = useRef<google.maps.Geocoder | null>(null);
-
-  const { contacts, addContact, deleteContact } = useContacts();
   const mapRef = useRef<google.maps.Map | null>(null);
-  const placesServiceRef = useRef<google.maps.places.PlacesService | null>(null);
-  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
-
-  const [safetyZones, setSafetyZones] = useState<SafetyZone[]>([]);
-  const [showSafetyZones, setShowSafetyZones] = useState<boolean>(true);
-  const [isUserMarkerPulsing, setIsUserMarkerPulsing] = useState<boolean>(true);
-
-  const onMapLoad = useCallback((map: google.maps.Map) => {
-    mapRef.current = map;
-    placesServiceRef.current = new google.maps.places.PlacesService(map);
-    directionsServiceRef.current = new google.maps.DirectionsService();
-    geocoderRef.current = new google.maps.Geocoder();
-  }, []);
+  const locationMarkerRef = useRef<google.maps.Marker | null>(null);
   
-  // Update time every minute
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 60000);
+  const mapContainerStyle: MapStyles = {
+    height: '100%', // Keep this as is
+    width: '100%'   // Keep this as is
+  };
+  
+  const directionsCallback = (
+    result: google.maps.DirectionsResult | null,
+    status: google.maps.DirectionsStatus
+  ) => {
+    console.log("Directions service returned:", status);
     
-    return () => clearInterval(timer);
-  }, []);
-
-  // Calculate route
-  const calculateRoute = async () => {
-    if (!fromAddress || !toAddress) {
-      alert("Please enter both 'From' and 'To' addresses");
-      return;
-    }
-
-    setRouteDisplayed("loading");
-
-    if (directionsServiceRef.current) {
-      try {
-        const results = await directionsServiceRef.current.route({
-          origin: fromAddress,
-          destination: toAddress,
-          travelMode: google.maps.TravelMode.WALKING,
-          provideRouteAlternatives: true,
-          optimizeWaypoints: true,
-        });
-
-        setDirectionsResponse(results);
-        setDistance(results.routes[0].legs[0].distance?.text || "");
-        setDuration(results.routes[0].legs[0].duration?.text || "");
-        
-        // Extract route points for geofencing
-        const path = results.routes[0].overview_path.map(point => ({
-          lat: point.lat(),
-          lng: point.lng()
-        }));
-        setRoutePoints(path);
-        
-        // Once route is calculated, fetch nearby safe points
-        fetchNearbyPlaces();
-        
-        setRouteDisplayed(true);
-      } catch (error) {
-        console.error("Failed to calculate route:", error);
-        alert("Could not calculate a route. Please check your addresses.");
-        setRouteDisplayed(false);
+    if (result !== null && status === 'OK') {
+      console.log("Got directions:", result);
+      setDirections(result);
+    } else {
+      console.error("Failed to get directions:", status);
+      if (status === "ZERO_RESULTS") {
+        alert("Could not find a route between these locations. Please try different locations.");
       }
     }
   };
-
-  // Enhanced nearby places fetching with more details - fixed typing issues
-  const fetchNearbyPlaces = () => {
-    if (!placesServiceRef.current || !mapRef.current || !userLocation) {
-      console.error("Required services not initialized or user location not available");
-      return;
-    }
-    
-    setSafePoints([]);
-    setEmergencyServicesLoading(true);
-    
-    const types = selectedSafetyFilters.filter(type => type !== 'safe_zone');
-    
-    if (types.length === 0) {
-      setEmergencyServicesLoading(false);
-      return;
-    }
-
-    let completedRequests = 0;
-    const totalRequests = types.length;
-
-    types.forEach(type => {
-      const request: google.maps.places.PlaceSearchRequest = {
-        location: userLocation,
-        radius: 3000,
-        type: type as string
+  
+  // Enhanced location marker with SVG and fallback
+  const createLocationMarkerIcon = () => {
+    try {
+      // Try to create SVG marker
+      const svgString = createLocationSvg(currentLocation.heading);
+      
+      return {
+        url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svgString),
+        scaledSize: new google.maps.Size(48, 48),
+        anchor: new google.maps.Point(24, 24),
       };
+    } catch (error) {
+      console.error("Error creating SVG marker, using fallback", error);
+      // Use fallback marker if SVG fails
+      return createFallbackMarker();
+    }
+  };
 
-      try {
-        placesServiceRef.current?.nearbySearch(request, (results, status) => {
-          if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-            const placesToProcess = results.slice(0, 5);
-            
-            placesToProcess.forEach((place) => {
-              if (place.geometry?.location && place.name) {
-                const safePoint = {
-                  location: {
-                    lat: place.geometry.location.lat(),
-                    lng: place.geometry.location.lng()
-                  },
-                  name: place.name,
-                  type: type,
-                  vicinity: place.vicinity || "",
-                  rating: place.rating || 0,
-                  isOpen: place.opening_hours?.isOpen() || false,
-                  photos: place.photos?.slice(0, 1).map(photo => photo.getUrl({ maxWidth: 200, maxHeight: 200 })) || [],
-                  distance: calculateDistance(
-                    userLocation,
-                    {
-                      lat: place.geometry.location.lat(),
-                      lng: place.geometry.location.lng()
-                    }
-                  ).toFixed(1) + " km"
-                };
-                
-                setSafePoints(prev => [...prev, safePoint]);
-              }
-            });
-          } else {
-            console.error(`Places service error for type ${type}:`, status);
+  // Enhanced get current location function with forced refresh option and visual effects
+  const fetchAndUpdateLocation = useCallback(async (zoomIn: boolean = false, forceRefresh: boolean = false) => {
+    try {
+      // Check permission first
+      const permissionStatus = await requestLocationPermission();
+      setLocationPermission(permissionStatus);
+      
+      if (permissionStatus === 'denied') {
+        setLocationError("Location access denied. Please enable location services to use live tracking features.");
+        setShowPermissionPrompt(true);
+        return null;
+      }
+
+      setLocationError(null);
+      setIsLocationRefreshing(true);
+      console.log(`Attempting to get current position (forced: ${forceRefresh})...`);
+      
+      const position = await getCurrentPosition({
+        ...highPrecisionLocationOptions,
+        maximumAge: forceRefresh ? 0 : highPrecisionLocationOptions.maximumAge,
+      });
+      
+      const newLocation = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        heading: position.coords.heading || undefined,
+      };
+      
+      console.log(`Location retrieved:`, newLocation);
+      
+      // Update location state
+      setCurrentLocation(newLocation);
+      setLocationInitialized(true);
+      
+      // If map is loaded, pan to the new location with enhanced animation
+      if (mapRef.current) {
+        // Use smooth animation to center map
+        mapRef.current.panTo(newLocation);
+        
+        if (zoomIn) {
+          // Apply smooth zoom effect to zoom level 19 (closer than before)
+          smoothZoomTo(mapRef.current, 19);
+          setMapZoomLevel(19);
+          
+          // Apply visual refresh effect
+          addRefreshEffect(mapRef.current);
+        }
+      }
+      
+      // Check if in danger zone
+      const dangerZone = checkIfInDangerZone(newLocation.lat, newLocation.lng, dangerZones);
+      if (dangerZone) {
+        console.log(`Currently in danger zone: ${dangerZone.name}`);
+        if (!locationWatchActive) {
+          // Only alert if this is a manual location check, not during constant tracking
+          alert(`Warning: You are entering a ${dangerZone.riskLevel} risk area: ${dangerZone.name}`);
+        }
+      }
+
+      // Add slight delay before turning off the refreshing state for better UX
+      setTimeout(() => {
+        setIsLocationRefreshing(false);
+      }, 800);
+
+      // Update to use pointer style markers instead of circles
+      setSelectedZone(null); // Close any open info windows when refreshing location
+
+      // Close any permission prompt if successful
+      setShowPermissionPrompt(false);
+
+      return newLocation;
+    } catch (error) {
+      console.error("Error getting location:", error);
+      setLocationError("Unable to access your location. Please check your device settings and try again.");
+      setShowPermissionPrompt(true);
+      setIsLocationRefreshing(false);
+      return null;
+    }
+  }, [dangerZones, locationWatchActive]);
+
+  // Get current location on mount using our improved function
+  useEffect(() => {
+    if (isLoaded && !locationInitialized) {
+      fetchAndUpdateLocation(true, true); // Force a fresh location check on first load
+    }
+  }, [isLoaded, locationInitialized, fetchAndUpdateLocation]);
+  
+  // Enhanced live location tracking with better error handling
+  useEffect(() => {
+    if (!isLoaded) return; // Wait for maps to load
+    
+    if (liveTracking && navigator.geolocation) {
+      // Clear any existing watchers
+      if (locationWatchId !== null) {
+        navigator.geolocation.clearWatch(locationWatchId);
+      }
+      
+      console.log('Starting live location tracking with high precision options...');
+      setLocationWatchActive(true);
+      
+      // Start watching position with high accuracy options
+      const watchId = navigator.geolocation.watchPosition(
+        position => {
+          const newLocation = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            heading: position.coords.heading || undefined,
+          };
+          
+          console.log(`Live tracking updated location:`, newLocation);
+          
+          // Update location
+          setCurrentLocation(newLocation);
+          setLocationInitialized(true);
+          setLocationError(null);
+          
+          // If map is loaded, pan to new location
+          if (mapRef.current) {
+            mapRef.current.panTo(newLocation);
           }
           
-          completedRequests++;
-          if (completedRequests === totalRequests) {
-            setEmergencyServicesLoading(false);
+          // Check if in danger zone
+          const dangerZone = checkIfInDangerZone(newLocation.lat, newLocation.lng, dangerZones);
+          if (dangerZone) {
+            console.log(`Currently in danger zone: ${dangerZone.name}`);
           }
-        });
-      } catch (error) {
-        console.error(`Error fetching ${type} places:`, error);
-        completedRequests++;
-        if (completedRequests === totalRequests) {
-          setEmergencyServicesLoading(false);
+        },
+        error => {
+          console.error("Error tracking location:", error);
+          let errorMessage = "Unable to track your location.";
+          
+          // Provide more specific error messages based on the error code
+          switch(error.code) {
+            case 1: // PERMISSION_DENIED
+              errorMessage = "Location permission denied. Please enable location services in your browser settings.";
+              break;
+            case 2: // POSITION_UNAVAILABLE
+              errorMessage = "Location information is unavailable. Please check your device's GPS.";
+              break;
+            case 3: // TIMEOUT
+              errorMessage = "Location request timed out. Please try again.";
+              break;
+          }
+          
+          setLocationError(errorMessage);
+          setLocationWatchActive(false);
+        },
+        highPrecisionLocationOptions
+      );
+      
+      setLocationWatchId(watchId);
+      
+      // Clean up on unmount or when tracking is stopped
+      return () => {
+        if (watchId !== null) {
+          console.log('Clearing location tracking...');
+          navigator.geolocation.clearWatch(watchId);
+          setLocationWatchActive(false);
         }
+      };
+    } else if (!liveTracking && locationWatchId !== null) {
+      console.log('Stopping location tracking...');
+      navigator.geolocation.clearWatch(locationWatchId);
+      setLocationWatchId(null);
+      setLocationWatchActive(false);
+    }
+  }, [liveTracking, dangerZones, isLoaded]);
+  
+  // Toggle live tracking with immediate location update
+  const toggleLiveTracking = useCallback(() => {
+    const newTrackingState = !liveTracking;
+    setLiveTracking(newTrackingState);
+    
+    if (newTrackingState) {
+      // If turning tracking on, immediately get current location
+      fetchAndUpdateLocation(true, true);
+    }
+  }, [liveTracking, fetchAndUpdateLocation]);
+
+  // Enhanced map load handler with initial location check
+  const handleMapLoad = useCallback((map: google.maps.Map) => {
+    console.log('Map loaded successfully');
+    mapRef.current = map;
+    setMapLoaded(true);
+    
+    // If we already have the location, center the map
+    if (currentLocation) {
+      map.panTo(currentLocation);
+    } else {
+      // Try to get location immediately if not already available
+      fetchAndUpdateLocation(true, true);
+    }
+    
+    // Add advanced event listeners for enhanced map experience
+    map.addListener('idle', () => {
+      console.log('Map idle, center:', map.getCenter()?.toJSON());
+      setMapBoundsChanged(true);
+      // Auto-update zoom level state when user zooms
+      const newZoom = map.getZoom();
+      if (newZoom !== undefined && newZoom !== mapZoomLevel) {
+        setMapZoomLevel(newZoom);
       }
     });
+  }, [currentLocation, fetchAndUpdateLocation, mapZoomLevel]);
+  
+  // Handle live location button click - force refresh with enhanced visuals
+  const handleRefreshLocation = useCallback(() => {
+    console.log('Forcing location refresh with visual effects...');
+    fetchAndUpdateLocation(true, true); // zoom in and force refresh
+  }, [fetchAndUpdateLocation]);
+
+  // Apply map style based on selected mode
+  useEffect(() => {
+    if (mapRef.current) {
+      mapRef.current.setOptions({
+        styles: getMapStyle('day') // Always use day mode
+      });
+    }
+  }, []);
+
+  // Handle permission request
+  const handleRequestPermission = useCallback(async () => {
+    const status = await requestLocationPermission();
+    setLocationPermission(status);
+    
+    if (status === 'granted') {
+      setShowPermissionPrompt(false);
+      fetchAndUpdateLocation(true, true);
+    }
+  }, [fetchAndUpdateLocation]);
+
+  // Mock function to trigger SOS
+  const triggerSOS = () => {
+    setSosActive(true);
+    alert('SOS alert triggered! Sending your location to emergency contacts.');
+    // In a real app, this would send SMS/notifications to contacts
+  };
+  
+  // Set destination for navigation
+  const handleSetDestination = () => {
+    // In a real app, this would use a location search API
+    // For now, setting a mock destination
+    setDestination({ lat: 40.7328, lng: -74.016 });
+  };
+  
+  // Add new emergency contact
+  const addNewContact = () => {
+    if (newContact.name && newContact.phone) {
+      const contact: Contact = {
+        id: Date.now().toString(),
+        name: newContact.name || '',
+        phone: newContact.phone || '',
+        relation: newContact.relation || 'Other'
+      };
+      setEmergencyContacts([...emergencyContacts, contact]);
+      setNewContact({ name: '', phone: '', relation: '' });
+      setShowContactForm(false);
+    }
+  };
+  
+  // Add new danger zone
+  const addNewDangerZone = () => {
+    if (newZone.name && newZone.lat && newZone.lng) {
+      const zone: DangerZone = {
+        id: Date.now().toString(),
+        name: newZone.name || '',
+        radius: newZone.radius || 200,
+        lat: newZone.lat || 0,
+        lng: newZone.lng || 0,
+        riskLevel: (newZone.riskLevel as 'high' | 'medium' | 'low') || 'medium'
+      };
+      setDangerZones([...dangerZones, zone]);
+      setNewZone({ name: '', radius: 200, lat: 0, lng: 0, riskLevel: 'medium' });
+      setShowZoneForm(false);
+    }
+  };
+  
+  // Remove contact
+  const removeContact = (id: string) => {
+    setEmergencyContacts(emergencyContacts.filter(contact => contact.id !== id));
+  };
+  
+  // Remove danger zone
+  const removeDangerZone = (id: string) => {
+    setDangerZones(dangerZones.filter(zone => zone.id !== id));
+  };
+  
+  // Get color for danger zones based on risk level
+  const getDangerZoneColor = (riskLevel: string): string => {
+    switch (riskLevel) {
+      case 'high': return '#FF3B30'; // More vibrant red
+      case 'medium': return '#FF9500'; // More vibrant orange
+      case 'low': return '#FFCC00'; // More vibrant yellow
+      default: return '#FF9500';
+    }
   };
 
-  const checkRouteDeviation = useCallback(() => {
-    if (!userLocation || routePoints.length === 0) return;
-
-    // Use Google's geometry library to check if point is on path
-    const isOnPath = google.maps.geometry.poly.isLocationOnEdge(
-      new google.maps.LatLng(userLocation.lat, userLocation.lng),
-      new google.maps.Polyline({ path: routePoints }),
-      geofenceRadius / 1000 // Convert meters to kilometers
-    );
-
-    const newStatus = isOnPath ? "inside" : "outside";
-    
-    if (newStatus === "outside" && routeDeviation !== "outside") {
-      // Only show alert when first deviating
-      setDeviationAlert(true);
-      setTimeout(() => setDeviationAlert(false), 10000); // Hide after 10 seconds
-    }
-    
-    setRouteDeviation(newStatus);
-  }, [userLocation, routePoints, geofenceRadius, routeDeviation]);
-
-  // Monitor user's location for route deviation
-  useEffect(() => {
-    if (routeDisplayed === true) {
-      const interval = setInterval(checkRouteDeviation, 10000); // Check every 10 seconds
-      return () => clearInterval(interval);
-    }
-  }, [routeDisplayed, checkRouteDeviation]);
-
-  // Properly track location updates with a ref to avoid infinite loops
-  const prevLocationRef = useRef<LatLngLiteral | null>(null);
-  
-  // Fetch user's live location - fixed to prevent infinite loop
-  useEffect(() => {
-    let watchId: number;
-    
-    if (navigator.geolocation) {
-      // First, get a one-time position quickly
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          const newLocation = { lat: latitude, lng: longitude };
-          setUserLocation(newLocation);
-          setMapCenter(newLocation);
-          fetchAddressFromCoordinates(newLocation);
-        },
-        (error) => {
-          console.error("Error getting initial location:", error);
+  // Enhanced handleIntercityTravel function
+  const handleIntercityTravel = () => {
+    if (fromLocation && toLocation) {
+      console.log("Starting intercity travel from", fromLocation, "to", toLocation);
+      
+      // Set the destination first
+      setDestination(toLocation);
+      
+      // Set the current location to the starting point
+      setCurrentLocation(fromLocation);
+      
+      // Explicitly request directions
+      if (mapRef.current) {
+        // Center the map somewhere between the start and end points
+        mapRef.current.panTo({
+          lat: (fromLocation.lat + toLocation.lat) / 2,
+          lng: (fromLocation.lng + toLocation.lng) / 2
+        });
+        
+        // Adjust zoom to fit both points
+        if (mapRef.current.fitBounds && window.google) {
+          const bounds = new window.google.maps.LatLngBounds();
+          bounds.extend(new window.google.maps.LatLng(fromLocation.lat, fromLocation.lng));
+          bounds.extend(new window.google.maps.LatLng(toLocation.lat, toLocation.lng));
+          mapRef.current.fitBounds(bounds);
         }
-      );
-
-      // Then set up continuous watching with high accuracy
-      watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          const newLocation = { lat: latitude, lng: longitude };
-          
-          // Only update if location has changed significantly
-          if (!prevLocationRef.current || 
-              calculateDistance(prevLocationRef.current, newLocation) > 0.01) { // > 10 meters
-            setUserLocation(newLocation);
-            prevLocationRef.current = newLocation;
-            
-            // Only fetch address when location changes significantly
-            if (!prevLocationRef.current || 
-                calculateDistance(prevLocationRef.current, newLocation) > 0.05) { // > 50 meters
-              fetchAddressFromCoordinates(newLocation);
-            }
-          }
-        },
-        (error) => {
-          console.error("Error watching location:", error);
-        },
-        { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
-      );
+      }
+      
+      // Clear any existing directions and set new ones
+      setDirections(null);
+      
+      // Close the intercity travel form
+      setIntercityTravel(false);
+      
+      // Show a notification to confirm the route is being calculated
+      alert(`Planning your journey from ${fromLocation.lat.toFixed(4)}, ${fromLocation.lng.toFixed(4)} to ${toLocation.lat.toFixed(4)}, ${toLocation.lng.toFixed(4)}`);
     } else {
-      console.error("Geolocation is not supported by this browser.");
+      // Show an error message if locations aren't selected
+      alert("Please select both starting point and destination.");
     }
+  };
+
+  // Create or update location marker when the map is loaded or location changes
+  useEffect(() => {
+    if (mapLoaded && mapRef.current && isLoaded) {
+      console.log('Updating location marker position');
+      
+      // Update existing marker if it exists, otherwise create a new one
+      if (locationMarkerRef.current) {
+        locationMarkerRef.current.setPosition(currentLocation);
+        locationMarkerRef.current.setIcon(createLocationMarkerIcon());
+      } 
+      // Note: The marker is created in the GoogleMap component, so we don't need to create it here
+    }
+  }, [mapLoaded, currentLocation, isLoaded]);
+
+  // Activate panic mode
+  const activatePanicMode = () => {
+    if (panicMode) return; // Already in panic mode
     
+    setPanicMode(true);
+    setPanicCountdown(10); // 10 second countdown before notifying contacts
+    
+    // Start high frequency location tracking
+    setLiveTracking(true);
+    
+    // Zoom the map to current location
+    fetchAndUpdateLocation(true);
+    
+    // Start countdown
+    panicTimeoutRef.current = setInterval(() => {
+      setPanicCountdown(prev => {
+        const newCount = prev !== null ? prev - 1 : 0;
+        
+        // When countdown reaches zero, send alerts
+        if (newCount <= 0) {
+          // Clear interval
+          if (panicTimeoutRef.current) {
+            clearInterval(panicTimeoutRef.current);
+            panicTimeoutRef.current = null;
+          }
+          
+          // Send alerts to emergency contacts
+          sendPanicAlerts();
+          return null;
+        }
+        
+        return newCount;
+      });
+    }, 1000);
+    
+    // Display immediate visual feedback
+    if (mapRef.current) {
+      // Add pulsing effect by temporarily changing map style
+      const originalStyle = mapRef.current.get('styles');
+      mapRef.current.set('styles', [
+        ...mapStyles,
+        {
+          "featureType": "all",
+          "elementType": "geometry",
+          "stylers": [{"saturation": -30}]
+        }
+      ]);
+      
+      // Restore original style after 1 second
+      setTimeout(() => {
+        if (mapRef.current) {
+          mapRef.current.set('styles', originalStyle || mapStyles);
+        }
+      }, 1000);
+    }
+  };
+  
+  // Cancel panic mode
+  const cancelPanicMode = () => {
+    setPanicMode(false);
+    setPanicCountdown(null);
+    
+    // Clear countdown interval
+    if (panicTimeoutRef.current) {
+      clearInterval(panicTimeoutRef.current);
+      panicTimeoutRef.current = null;
+    }
+  };
+  
+  // Send alerts to emergency contacts
+  const sendPanicAlerts = () => {
+    // In a real app, this would send SMS/push notifications with current location
+    console.log("ALERT: Sending panic alerts to emergency contacts");
+    alert(`EMERGENCY ALERT SENT to ${emergencyContacts.length} contacts with your current location.`);
+    
+    // This would be implemented with a backend API call in a real app
+    emergencyContacts.forEach(contact => {
+      console.log(`Sending alert to ${contact.name} at ${contact.phone}`);
+      // API call would happen here
+    });
+  };
+  
+  // Clean up panic mode on component unmount
+  useEffect(() => {
     return () => {
-      if (watchId !== undefined) {
-        navigator.geolocation.clearWatch(watchId);
+      if (panicTimeoutRef.current) {
+        clearInterval(panicTimeoutRef.current);
       }
     };
-  }, []); // Empty dependency array - only run once
-
-  // Calculate distance between two points in kilometers
-  const calculateDistance = (point1: LatLngLiteral, point2: LatLngLiteral): number => {
-    const R = 6371; // Earth's radius in km
-    const dLat = (point2.lat - point1.lat) * Math.PI / 180;
-    const dLng = (point2.lng - point1.lng) * Math.PI / 180;
-    const a 
-      = Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(point1.lat * Math.PI / 180) * Math.cos(point2.lat * Math.PI / 180) * 
-      Math.sin(dLng/2) * Math.sin(dLng/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  };
-
-  // Get address from coordinates using Google Geocoder
-  const fetchAddressFromCoordinates = (location: LatLngLiteral) => {
-    if (!geocoderRef.current) return;
-    
-    setIsLoadingAddress(true);
-    
-    try {
-      geocoderRef.current.geocode({ location }, (results, status) => {
-        if (status === google.maps.GeocoderStatus.OK && results && results[0]) {
-          setUserAddress(results[0].formatted_address);
-        } else {
-          console.error("Geocoder failed:", status);
-          setUserAddress("Location unavailable");
-        }
-        setIsLoadingAddress(false);
-      });
-    } catch (error) {
-      console.error("Error in geocoding:", error);
-      setUserAddress("Error getting location");
-      setIsLoadingAddress(false);
-    }
-  };
-
-  const sendLocationToAPI = async () => {
-    if (userLocation) {
-      try {
-        const response = await fetch("http://localhost:8888/api/location", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            latitude: userLocation.lat,
-            longitude: userLocation.lng,
-          }),
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-          console.error("Failed to send location:", data.message);
-        }
-      } catch (error) {
-        console.error("Error sending location:", error);
-      }
-    }
-  };
-
-  // Send location to API every 1 minute
-  useEffect(() => {
-    const interval = setInterval(sendLocationToAPI, 60000);
-    return () => clearInterval(interval);
-  }, [userLocation]);
-
-  const handleSOS = async () => {
-    const sosButton = document.getElementById("sos-button");
-    sosButton?.classList.add("scale-150");
+  }, []);
   
-    // Show confirmation alert instantly
-    const userConfirmed = window.confirm("⚠️ SOS Alert! Press 'OK' within 5 seconds to confirm.");
-  
-    // Start a 5-second timer
-    setTimeout(async () => {
-      if (!userConfirmed) {
-        sosButton?.classList.remove("scale-150");
-        alert("SOS alert cancelled.");
-        return;
-      }
-  
-      // Capture any message the user wants to send
-      const message = prompt("Enter any additional details about your emergency (optional):");
-      
-      try {
-        // Analyze message for distress signals using Google Natural Language API
-        if (message) {
-          const sentimentResponse = await fetch("http://localhost:3001/api/analyze-sentiment", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: message }),
-          });
-          
-          if (sentimentResponse.ok) {
-            const sentimentData = await sentimentResponse.json();
-            // If sentiment is very negative, escalate the alert
-            if (sentimentData.score < -0.5) {
-              // Add high priority flag
-            }
-          }
-        }
-      
-        const response = await fetch("http://localhost:3001/api/sos", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: userLocation,
-            message: message || "Emergency alert triggered",
-          }),
-        });
-  
-        if (!response.ok) {
-          throw new Error("Failed to send SOS messages.");
-        }
-  
-        alert("🚨 SOS alert sent to your emergency contacts and nearby authorities!");
-  
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Network error. Please try again.";
-        alert(errorMessage);
-      } finally {
-        sosButton?.classList.remove("scale-150");
-      }
-    }, 5000); // 5-second delay before action
-  };
-  
-  const toggleDarkMode = () => {
-    setDarkMode(!darkMode);
-  };
-
-  function handleSignOut(event: MouseEvent<HTMLButtonElement>): void {
-    // Add actual sign out logic here
-    console.log("Signing out...");
-    // Example: Redirect to login page
-    window.location.href = "/login";
+  function handleFromPlaceChanged(): void {
+    throw new Error('Function not implemented.');
   }
 
-  const sendAlert = (id: number) => {
-    setAlertSent(id);
-    setTimeout(() => {
-      setAlertSent(null);
-    }, 3000);
-  };
-
-  const handleSaveRoute = (name: string, notes?: string) => {
-    if (!name) {
-      alert("Please enter a name for this route");
-      return;
-    }
-
-    // Calculate safety score based on nearby safe points
-    const safetyScore = Math.min(10, Math.floor(safePoints.length * 1.5));
-    
-    // Get current lighting conditions - simplified example
-    const hour = new Date().getHours();
-    const lightingCondition = hour >= 6 && hour < 18 ? "Good lighting" : "Limited lighting";
-    
-    // Time of day category
-    let timeOfDay;
-    if (hour >= 5 && hour < 12) timeOfDay = "Morning";
-    else if (hour >= 12 && hour < 17) timeOfDay = "Afternoon";
-    else if (hour >= 17 && hour < 21) timeOfDay = "Evening";
-    else timeOfDay = "Night";
-
-    const newRoute = travelRecommendationService.saveRoute({
-      name,
-      from: fromAddress,
-      to: toAddress,
-      safetyScore,
-      lightingCondition,
-      timeOfDay,
-      notes
-    });
-
-    setSavedRoutes(travelRecommendationService.getSavedRoutes());
-    setSaveRouteModal(false);
-    alert("Route saved successfully!");
-  };
-
-  const handleSelectRoute = (route: TravelRoute) => {
-    setFromAddress(route.from);
-    setToAddress(route.to);
-    calculateRoute();
-  };
-
-  const handleToggleFavorite = (id: string) => {
-    const updatedRoute = travelRecommendationService.toggleFavorite(id);
-    if (updatedRoute) {
-      setSavedRoutes(travelRecommendationService.getSavedRoutes());
-    }
-  };
-
-  const handleDeleteRoute = (id: string) => {
-    if (window.confirm("Are you sure you want to delete this route?")) {
-      const deleted = travelRecommendationService.deleteRoute(id);
-      if (deleted) {
-        setSavedRoutes(travelRecommendationService.getSavedRoutes());
+  function handleToPlaceChanged(): void {
+    if (toAutocompleteRef.current) {
+      const place = toAutocompleteRef.current.getPlace();
+      if (place.geometry && place.geometry.location) {
+        setToLocation({
+          lat: place.geometry.location.lat(),
+          lng: place.geometry.location.lng()
+        });
       }
     }
-  };
+  }
 
-  // Add this useEffect to load saved routes when component mounts
-  useEffect(() => {
-    const loadSavedRoutes = () => {
-      const routes = travelRecommendationService.getSavedRoutes();
-      setSavedRoutes(routes);
-    };
-    
-    loadSavedRoutes();
-  }, [travelRecommendationService]);
-
-  // Map options based on dark mode
-  const mapOptions: MapOptions = {
-    disableDefaultUI: false,
-    zoomControl: true,
-    styles: darkMode ? [
-      { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
-      { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
-      { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
-      { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] },
-      { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212a37" }] },
-      { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
-    ] : [],
-  };
-
-  // Function to center map on user's location
-  const centerMapOnUser = () => {
-    if (userLocation && mapRef.current) {
-      mapRef.current.panTo(userLocation);
-      mapRef.current.setZoom(16);
-    }
-  };
-
-  // Filter safety points based on selected types
-  const toggleSafetyFilter = (type: string) => {
-    setSelectedSafetyFilters(prev => {
-      if (prev.includes(type)) {
-        return prev.filter(t => t !== type);
-      } else {
-        return [...prev, type];
-      }
-    });
-  };
-
-  // Refresh safety points when filters change
-  useEffect(() => {
-    if (userLocation) {
-      fetchNearbyPlaces();
-    }
-  }, [selectedSafetyFilters]);
-
-  // Fixed getMarkerIconForType to handle undefined/null cases
-  const getMarkerIconForType = (type: string) => {
-    if (!type) return {
-      url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
-      scaledSize: new google.maps.Size(32, 32)
-    };
-    
-    switch (type) {
-      case 'police':
-        return {
-          url: 'https://maps.google.com/mapfiles/ms/icons/police.png',
-          scaledSize: new google.maps.Size(32, 32)
-        };
-      case 'hospital':
-        return {
-          url: 'https://maps.google.com/mapfiles/ms/icons/hospitals.png',
-          scaledSize: new google.maps.Size(32, 32)
-        };
-      case 'transit_station':
-      case 'subway_station':
-      case 'bus_station':
-        return {
-          url: 'https://maps.google.com/mapfiles/ms/icons/bus.png',
-          scaledSize: new google.maps.Size(32, 32)
-        };
-      case 'shopping_mall':
-        return {
-          url: 'https://maps.google.com/mapfiles/ms/icons/shopping.png',
-          scaledSize: new google.maps.Size(32, 32)
-        };
-      case 'cafe':
-        return {
-          url: 'https://maps.google.com/mapfiles/ms/icons/coffee.png',
-          scaledSize: new google.maps.Size(32, 32)
-        };
-      case 'library':
-        return {
-          url: 'https://maps.google.com/mapfiles/ms/icons/library.png',
-          scaledSize: new google.maps.Size(32, 32)
-        };
-      case 'safe_zone':
-        return {
-          url: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png',
-          scaledSize: new google.maps.Size(38, 38)
-        };
-      default:
-        return {
-          url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
-          scaledSize: new google.maps.Size(32, 32)
-        };
-    }
-  };
-
-  // User location circle rendering options
-  const userLocationCircleOptions = useMemo(() => {
-    return {
-      center: userLocation || DEFAULT_CENTER,
-      radius: 30, // 30 meters accuracy radius
-      strokeColor: "#4285F4",
-      strokeOpacity: 0.8,
-      strokeWeight: 2,
-      fillColor: "#4285F4",
-      fillOpacity: 0.2,
-      visible: !!userLocation
-    };
-  }, [userLocation]);
-
-  const fetchSafetyZones = useCallback(() => {
-    if (!userLocation) return;
-    
-    // In a real app, you'd fetch this data from an API
-    // For demo purposes, we'll generate some zones around the user's location
-    const demoSafetyZones: SafetyZone[] = [
-      // Safe zone - university or well-lit commercial area
-      {
-        location: {
-          lat: userLocation.lat + 0.003,
-          lng: userLocation.lng + 0.002
-        },
-        radius: 400, // meters
-        level: 'safe',
-        name: 'University Campus',
-        description: 'Well-lit area with 24/7 security and frequent patrols'
-      },
-      // Caution zone - moderate risk area
-      {
-        location: {
-          lat: userLocation.lat - 0.002,
-          lng: userLocation.lng + 0.004
-        },
-        radius: 300, // meters
-        level: 'caution',
-        name: 'Downtown District',
-        description: 'Moderate lighting, some reported incidents in evening hours'
-      },
-      // Danger zone - high risk area based on crime statistics
-      {
-        location: {
-          lat: userLocation.lat - 0.004,
-          lng: userLocation.lng - 0.003
-        },
-        radius: 250, // meters
-        level: 'danger',
-        name: 'Isolated Area',
-        description: 'Poor lighting, multiple incidents reported, minimal security presence'
-      }
-    ];
-    
-    setSafetyZones(demoSafetyZones);
-  }, [userLocation]);
-
-  // Call fetchSafetyZones when user location changes
-  useEffect(() => {
-    if (userLocation) {
-      fetchSafetyZones();
-    }
-  }, [userLocation, fetchSafetyZones]);
-
-  // Toggle animation for live location marker
-  useEffect(() => {
-    const pulseInterval = setInterval(() => {
-      setIsUserMarkerPulsing(prev => !prev);
-    }, 2000);
-    
-    return () => clearInterval(pulseInterval);
+  // Enhanced marker click handler for showing info windows
+  const handleMarkerClick = useCallback((zone: DangerZone) => {
+    setSelectedZone(zone);
   }, []);
 
-  // Helper function to get color for safety zone
-  const getSafetyZoneColor = (level: 'safe' | 'caution' | 'danger') => {
-    switch (level) {
-      case 'safe':
-        return { fill: '#10B981', stroke: '#059669' }; // Green
-      case 'caution':
-        return { fill: '#F59E0B', stroke: '#D97706' }; // Amber
-      case 'danger':
-        return { fill: '#EF4444', stroke: '#DC2626' }; // Red
-      default:
-        return { fill: '#6B7280', stroke: '#4B5563' }; // Gray
-    }
-  };
-
-  // Enhanced styling for user location marker
-  const userLocationPulse = useMemo(() => ({
-    path: google.maps.SymbolPath.CIRCLE,
-    scale: isUserMarkerPulsing ? 10 : 8,
-    fillColor: '#3B82F6',
-    fillOpacity: isUserMarkerPulsing ? 0.8 : 1,
-    strokeColor: '#FFFFFF',
-    strokeWeight: 3,
-  }), [isUserMarkerPulsing]);
-
-  // Add safety zone toggle
-  const toggleSafetyZones = () => {
-    setShowSafetyZones(!showSafetyZones);
-  };
-
-  // Get user's current safety status based on zones
-  const getUserSafetyStatus = useCallback((): { status: 'safe' | 'caution' | 'danger' | 'unknown', zoneName?: string } => {
-    if (!userLocation || safetyZones.length === 0) {
-      return { status: 'unknown' };
-    }
-    
-    for (const zone of safetyZones) {
-      const distance = calculateDistance(userLocation, zone.location) * 1000; // convert to meters
-      if (distance <= zone.radius) {
-        return { 
-          status: zone.level, 
-          zoneName: zone.name 
-        };
-      }
-    }
-    
-    return { status: 'unknown' };
-  }, [userLocation, safetyZones, calculateDistance]);
-
-  const userSafetyStatus = getUserSafetyStatus();
-
   return (
-    <div className={`relative min-h-screen ${darkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"} transition-colors duration-300`}>
+    <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      {/* Side Menu */}
+      <div className={`fixed z-20 h-full w-72 bg-gradient-to-b from-purple-900 to-indigo-800 shadow-xl transform transition-transform ease-in-out duration-300 ${showSideMenu ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-6 border-b border-purple-700">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center">
+              <Shield size={24} className="text-purple-300 mr-2" />
+              <h2 className="text-xl font-bold text-white">SafeGuard</h2>
+            </div>
+            <button onClick={() => setShowSideMenu(false)} className="p-2 rounded-full text-purple-300 hover:bg-purple-800 hover:text-white transition-all">
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+        
+        <div className="p-4">
+          <div className="mb-6 flex flex-col items-center p-4">
+            <div className="w-20 h-20 bg-purple-700 rounded-full flex items-center justify-center mb-2">
+              <Users size={32} className="text-white" />
+            </div>
+            <h3 className="text-white font-medium">User Profile</h3>
+            <p className="text-purple-300 text-sm">Safety is our priority</p>
+          </div>
+          
+          <ul className="space-y-1">
+            <li className={`p-3 rounded-lg cursor-pointer ${currentTab === 'dashboard' ? 'bg-purple-700 text-white' : 'text-purple-300 hover:bg-purple-800 hover:text-white'} transition-all`}
+              onClick={() => { setCurrentTab('dashboard'); setShowSideMenu(false); }}>
+              <div className="flex items-center">
+                <Home size={18} className="mr-3" />
+                <span>Dashboard</span>
+              </div>
+            </li>
+            <li className={`p-3 rounded-lg cursor-pointer ${currentTab === 'contacts' ? 'bg-purple-700 text-white' : 'text-purple-300 hover:bg-purple-800 hover:text-white'} transition-all`}
+              onClick={() => { setCurrentTab('contacts'); setShowSideMenu(false); }}>
+              <div className="flex items-center">
+                <Phone size={18} className="mr-3" />
+                <span>Emergency Contacts</span>
+              </div>
+            </li>
+            <li className={`p-3 rounded-lg cursor-pointer ${currentTab === 'danger-zones' ? 'bg-purple-700 text-white' : 'text-purple-300 hover:bg-purple-800 hover:text-white'} transition-all`}
+              onClick={() => { setCurrentTab('danger-zones'); setShowSideMenu(false); }}>
+              <div className="flex items-center">
+                <AlertTriangle size={18} className="mr-3" />
+                <span>Danger Zones</span>
+              </div>
+            </li>
+            <li className="p-3 rounded-lg cursor-pointer text-purple-300 hover:bg-purple-800 hover:text-white transition-all">
+              <div className="flex items-center">
+                <Map size={18} className="mr-3" />
+                <span>Safe Routes</span>
+              </div>
+            </li>
+            <li className="p-3 rounded-lg cursor-pointer text-purple-300 hover:bg-purple-800 hover:text-white transition-all">
+              <div className="flex items-center">
+                <Settings size={18} className="mr-3" />
+                <span>Settings</span>
+              </div>
+            </li>
+            <li className="p-3 rounded-lg cursor-pointer text-purple-300 hover:bg-purple-800 hover:text-white transition-all">
+              <div className="flex items-center">
+                <LogOut size={18} className="mr-3" />
+                <span>Sign Out</span>
+              </div>
+            </li>
+          </ul>
+          
+          <div className="absolute bottom-4 left-0 right-0 p-4">
+            <button className="flex items-center justify-center w-full py-2 px-4 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-all">
+              <LogOut size={16} className="mr-2" />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </div>
+      </div>
       
-      {/* Animated Sidebar */}
-      <aside 
-        className={`fixed top-0 left-0 h-full w-72 ${darkMode ? "bg-gray-800" : "bg-white"} shadow-2xl transform ${sidebarOpen ? "translate-x-0" : "-translate-x-72"} transition-all duration-300 ease-in-out z-50 overflow-hidden rounded-r-xl`}
-      >
-        <div className="p-6 text-xl font-bold flex items-center">
-          <Shield className={`h-7 w-7 mr-3 ${darkMode ? "text-pink-400" : "text-pink-600"}`} />
-          <span className="bg-gradient-to-r from-pink-500 to-purple-600 bg-clip-text text-transparent font-extrabold text-2xl tracking-tight">
-            SafeHer
-          </span>
-        </div>
-        
-        {/* Decorative Element */}
-        <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-pink-200 to-transparent opacity-20 rounded-bl-full -z-10"></div>
-        
-        <nav className="flex flex-col space-y-2 p-4">
-          <button className={`flex items-center space-x-3 p-3 rounded-lg transition-all duration-200 transform hover:translate-x-2 ${darkMode ? "bg-pink-900/40 text-pink-100 hover:bg-pink-800/60" : "bg-pink-100 text-pink-800 hover:bg-pink-200"}`}>
-            <Home className="h-5 w-5" />
-            <span>Dashboard</span>
-            <ChevronRight className="h-4 w-4 ml-auto" />
-          </button>
-          
-          {[
-            { icon: <Phone className="h-5 w-5" />, label: "Emergency Contacts", path: "/emergency-contacts" },
-            { icon: <Share className="h-5 w-5" />, label: "Secure Sharing", path: "/secure-sharing" },
-            { icon: <AlertTriangle className="h-5 w-5" />, label: "Danger Zones", path: "/danger-zones" },
-            { icon: <Users className="h-5 w-5" />, label: "Be a Nearby Responder", path: "/responder" },
-            { icon: <Settings className="h-5 w-5" />, label: "Settings", path: "/settings" }
-          ].map((item, index) => (
-            <Link 
-              key={index}
-              to={item.path}
-              className={`flex items-center space-x-3 p-3 rounded-lg transition-all duration-200 transform hover:translate-x-2 ${darkMode ? "hover:bg-gray-700/70" : "hover:bg-gray-100"}`}
-              style={{ animationDelay: `${index * 100}ms` }}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-              <ChevronRight className="h-4 w-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
-            </Link>
-          ))}
-        </nav>
-        
-        {/* Bottom Section */}
-        <div className="absolute bottom-0 left-0 w-full p-6 border-t border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between mb-6">
-            <span className="text-sm text-gray-500 dark:text-gray-400">Dark Mode</span>
-            <button 
-              onClick={(e) => { e.stopPropagation(); toggleDarkMode(); }}
-              className={`w-12 h-6 rounded-full p-1 transition-colors duration-300 ${darkMode ? "bg-pink-600" : "bg-gray-300"}`}
-            >
-              <div className={`w-4 h-4 rounded-full bg-white transform transition-transform duration-300 ${darkMode ? "translate-x-6" : "translate-x-0"}`}></div>
-            </button>
-          </div>
-          
-          <button 
-            onClick={handleSignOut} 
-            className={`flex items-center space-x-2 w-full p-3 text-red-600 rounded-lg transition-all duration-200 ${darkMode ? "hover:bg-red-900/30" : "hover:bg-red-100"}`}
-          >
-            <LogOut className="h-5 w-5" />
-            <span>Sign Out</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Overlay with blur effect when sidebar is open */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40"
-          onClick={() => setSidebarOpen(false)}
-        ></div>
-      )}
-
-      {/* Navbar with Glass Effect */}
-      <header className={`sticky top-0 z-30 ${darkMode ? "bg-gray-800/90" : "bg-white/90"} backdrop-blur-md border-b ${darkMode ? "border-gray-700" : "border-gray-200"} shadow-sm`}>
-        <div className="flex items-center justify-between p-4 max-w-7xl mx-auto">
-          <div className="flex items-center">
-            <button 
-              className={`p-2 rounded-full ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-200"} transition-colors duration-200`}
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            >
-              <Menu className="h-6 w-6" />
-            </button>
-            <h1 className="text-xl font-bold ml-4 flex items-center">
-              <Shield className={`h-5 w-5 mr-2 ${darkMode ? "text-pink-400" : "text-pink-600"}`} />
-              <span className="bg-gradient-to-r from-pink-500 to-purple-600 bg-clip-text text-transparent">
-                SafeHer
-              </span>
-            </h1>
-          </div>
-          
-          <div className="flex items-center space-x-4">
-            {/* Current Time with animated border */}
-            <div className={`hidden md:flex items-center text-sm px-3 py-1.5 border ${darkMode ? "border-gray-600" : "border-gray-300"} rounded-full`}>
-              <Clock className="h-4 w-4 mr-2" />
-              <span>{currentTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-            </div>
-            
-            {/* Help Button with Tooltip */}
-            <div className="relative group">
-              <button className={`p-2 rounded-full ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-200"} transition-colors duration-200`}>
-                <HelpCircle className="h-6 w-6" />
-              </button>
-              <div className="absolute right-0 mt-2 w-48 px-4 py-2 bg-black text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                Get help with navigation and safety features
-              </div>
-            </div>
-            
-            {/* User dropdown with animation */}
-            <div className="relative">
-              <button 
-                className={`p-2 rounded-full ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-200"} transition-colors duration-200 flex items-center`}
-                onClick={() => setUserDropdown(!userDropdown)}
-              >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center mr-2 shadow-md">
-                  <User className="h-5 w-5 text-white" />
-                </div>
-                <span className="hidden md:inline font-medium">User</span>
-              </button>
-              
-              {userDropdown && (
-                <div className={`absolute right-0 mt-3 w-64 ${darkMode ? "bg-gray-800" : "bg-white"} shadow-xl rounded-xl overflow-hidden z-50 animate-fadeIn`}>
-                  <div className={`p-4 border-b ${darkMode ? "border-gray-700" : "border-gray-200"}`}>
-                    <div className="flex items-center">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center mr-3 shadow-md">
-                        <User className="h-6 w-6 text-white" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-lg">User</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-2">
-                    <Link 
-                      to="/notification-settings" 
-                      className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}
-                    >
-                      <div className="flex items-center">
-                        <Bell className="h-5 w-5 mr-2" />
-                        Notification Preferences
-                      </div>
-                    </Link>
-                    <Link 
-                      to="/privacy-settings" 
-                      className={`block w-full p-3 text-left rounded-lg ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"} transition-colors duration-200`}
-                    >
-                      <div className="flex items-center">
-                        <Shield className="h-5 w-5 mr-2" />
-                        Privacy Settings
-                      </div>
-                    </Link>
-                    <button className={`flex items-center w-full p-3 mt-2 text-left rounded-lg text-red-600 ${darkMode ? "hover:bg-red-900/30" : "hover:bg-red-100"} transition-colors duration-200`}>
-                      <LogOut className="h-5 w-5 mr-2" /> Sign Out
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
-        {/* Route Deviation Alert */}
-        {deviationAlert && (
-          <div className={`fixed top-24 left-1/2 transform -translate-x-1/2 ${darkMode ? "bg-red-900/80" : "bg-red-100"} border-l-4 border-red-500 p-4 mb-6 rounded-lg shadow-xl animate-pulse z-50 w-5/6 max-w-2xl`}>
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        {/* Header */}
+        <header className="bg-white shadow-md p-4 z-10">
+          <div className="flex justify-between items-center">
             <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <AlertTriangle className={`h-6 w-6 ${darkMode ? "text-red-400" : "text-red-600"}`} />
-              </div>
-              <div className="ml-3">
-                <p className="font-bold text-lg">Route Deviation Detected!</p>
-                <p className="text-sm">You have strayed from your planned route. Return to the route or tap "I'm Safe" to dismiss.</p>
-              </div>
-              <button 
-                onClick={() => setDeviationAlert(false)}
-                className="ml-auto bg-green-600 text-white px-4 py-2 rounded-lg"
-              >
-                I'm Safe
+              <button onClick={() => setShowSideMenu(true)} className="p-2 rounded-full hover:bg-purple-100 hover:text-purple-700 transition-all mr-2">
+                <Menu size={20} />
               </button>
+              <div className="flex flex-col">
+                <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">Women Safety Dashboard</h1>
+                <p className="text-xs text-gray-500">Stay safe, stay connected</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <button className="p-2 rounded-full hover:bg-purple-100 hover:text-purple-700 transition-all relative">
+                <Bell size={20} />
+                <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-red-500"></span>
+              </button>
+              <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 flex items-center justify-center text-white font-medium cursor-pointer">
+                JS
+              </div>
             </div>
           </div>
-        )}
-
-        {/* Notification Banner */}
-        {showNotification && (
-          <div className={`relative ${darkMode ? "bg-green-900/50" : "bg-green-100"} border-l-4 border-green-500 p-4 mb-6 rounded-lg shadow-md animate-slideDown`}>
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <Shield className={`h-6 w-6 ${darkMode ? "text-green-400" : "text-green-600"}`} />
-              </div>
-              <div className="ml-3">
-                <p className="font-medium">Safe Mode Active</p>
-                <p className="text-sm">Your location is being monitored. Stay safe!</p>
-              </div>
-              <button 
-                onClick={() => setShowNotification(false)}
-                className="ml-auto"
-              >
-                <X className="h-5 w-5 text-gray-500" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 gap-8">
-          {/* Map Section with Enhanced UI */}
-          <div className={`${darkMode ? "bg-gray-800" : "bg-white"} rounded-2xl shadow-xl overflow-hidden transform transition-all duration-300 hover:shadow-2xl hover:scale-[1.01]`}>
-            <div className={`p-4 flex justify-between items-center border-b ${darkMode ? "border-gray-700" : "border-gray-200"}`}>
-              <h2 className="text-lg font-semibold flex items-center">
-                <MapPin className={`h-5 w-5 mr-2 ${darkMode ? "text-pink-400" : "text-pink-600"}`} />
-                Route Navigation
-              </h2>
-              <div className="flex items-center space-x-2">
-                {/* User Safety Status Indicator */}
-                {userSafetyStatus.status !== 'unknown' && (
-                  <span className={`px-3 py-1 text-xs rounded-full flex items-center ${
-                    userSafetyStatus.status === 'safe' 
-                      ? 'bg-green-100 text-green-800' 
-                      : userSafetyStatus.status === 'caution'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-red-100 text-red-800 animate-pulse'
-                  }`}>
-                    <span className={`w-2 h-2 rounded-full mr-1 ${
-                      userSafetyStatus.status === 'safe' 
-                        ? 'bg-green-500' 
-                        : userSafetyStatus.status === 'caution'
-                          ? 'bg-yellow-500'
-                          : 'bg-red-500'
-                    }`}></span>
-                    {userSafetyStatus.zoneName || `${userSafetyStatus.status.charAt(0).toUpperCase() + userSafetyStatus.status.slice(1)} Area`}
-                  </span>
-                )}
-                {userAddress && (
-                  <span className={`px-3 py-1 text-xs rounded-full ${darkMode ? "bg-blue-900/40 text-blue-200" : "bg-blue-100 text-blue-800"} flex items-center`}>
-                    {isLoadingAddress ? (
-                      <>
-                        <span className="mr-1">Locating...</span>
-                        <div className="w-3 h-3 rounded-full border-2 border-blue-400 border-t-transparent animate-spin"></div>
-                      </>
-                    ) : (
-                      <span className="truncate max-w-[200px]" title={userAddress}>{userAddress}</span>
-                    )}
-                  </span>
-                )}
-                {routeDeviation === "outside" && (
-                  <span className="px-3 py-1 text-xs rounded-full bg-red-500 text-white animate-pulse">
-                    Off Route!
-                  </span>
-                )}
-                {routeDeviation === "inside" && (
-                  <span className="px-3 py-1 text-xs rounded-full bg-green-500 text-white">
-                    On Route
-                  </span>
-                )}
-                {distance && duration && (
-                  <span className="px-3 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
-                    {distance} • {duration}
-                  </span>
-                )}
-              </div>
-            </div>
-            
-            {/* Safety filters bar */}
-            <div className={`p-2 overflow-x-auto flex flex-nowrap gap-2 border-b ${darkMode ? "border-gray-700 bg-gray-800" : "border-gray-200 bg-gray-50"}`}>
-              <span className="text-xs font-medium flex-shrink-0 flex items-center px-2">
-                Safety Filters:
-              </span>
-              {[
-                {type: 'police', label: 'Police Stations'},
-                {type: 'hospital', label: 'Hospitals'},
-                {type: 'transit_station', label: 'Transit Stations'},
-                {type: 'shopping_mall', label: 'Shopping Malls'},
-                {type: 'cafe', label: 'Cafés'},
-                {type: 'library', label: 'Libraries'},
-                {type: 'safe_zone', label: 'Safe Zones'}
-              ].map(filter => (
-                <button
-                  key={filter.type}
-                  onClick={() => toggleSafetyFilter(filter.type)}
-                  className={`flex-shrink-0 px-3 py-1 text-xs rounded-full flex items-center transition-colors ${
-                    selectedSafetyFilters.includes(filter.type)
-                      ? darkMode
-                        ? "bg-pink-900 text-white"
-                        : "bg-pink-100 text-pink-800"
-                      : darkMode
-                        ? "bg-gray-700 text-gray-400"
-                        : "bg-gray-200 text-gray-600"
-                  }`}
-                >
-                  {filter.label}
-                  {selectedSafetyFilters.includes(filter.type) && (
-                    <CheckCircle className="ml-1 h-3 w-3" />
-                  )}
-                </button>
-              ))}
-              <button
-                onClick={toggleSafetyZones}
-                className={`flex-shrink-0 px-3 py-1 text-xs rounded-full flex items-center transition-colors ${
-                  showSafetyZones
-                    ? darkMode
-                      ? "bg-pink-900 text-white"
-                      : "bg-pink-100 text-pink-800"
-                    : darkMode
-                      ? "bg-gray-700 text-gray-400"
-                      : "bg-gray-200 text-gray-600"
-                }`}
-              >
-                Safety Zones
-                {showSafetyZones && (
-                  <CheckCircle className="ml-1 h-3 w-3" />
-                )}
-              </button>
-            </div>
-            
-            <div className={`h-[60vh] ${darkMode ? "bg-gray-700" : "bg-gray-200"} relative overflow-hidden rounded-lg`}>
-              {isLoaded ? (
-                <>
-                  <GoogleMap
-                    mapContainerStyle={{ width: '100%', height: '100%' }}
-                    center={mapCenter}
-                    zoom={DEFAULT_ZOOM}
-                    onLoad={onMapLoad}
-                    options={mapOptions}
+        </header>
+        
+        {/* Content based on current tab */}
+        <main className="flex-1 overflow-y-auto p-6">
+          {currentTab === 'dashboard' && (
+            <div className="h-full flex flex-col space-y-6">
+              {/* Welcome Message - Make it smaller to give more room to map */}
+              <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-2xl shadow-lg p-4 text-white animate-fadeIn">
+                <h2 className="text-xl font-bold mb-1">Welcome Back!</h2>
+                <p className="opacity-90 text-sm">Your safety is our priority. Use the SOS button in case of emergency.</p>
+                <div className="flex mt-3">
+                  <button 
+                    onClick={triggerSOS}
+                    className={`px-4 py-1.5 rounded-lg ${sosActive ? 'bg-red-700 animate-pulse' : 'bg-white text-red-600'} font-bold transition-all mr-3 flex items-center shadow-md text-sm`}
                   >
-                    {/* Enhanced live location marker with pulsing effect */}
-                    {userLocation && (
-                      <>
-                        {/* Main user location marker */}
+                    <Shield size={16} className="mr-1.5" />
+                    SOS Emergency
+                  </button>
+                  <button 
+                    onClick={activatePanicMode}
+                    className={`px-4 py-1.5 rounded-lg ${panicMode ? 'bg-red-700 animate-pulse' : 'bg-white text-orange-600'} font-bold transition-all mr-3 flex items-center shadow-md text-sm`}
+                  >
+                    <AlertOctagon size={16} className="mr-1.5" />
+                    Panic Mode {panicCountdown !== null && `(${panicCountdown})`}
+                  </button>
+                  <button className="px-4 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-800 transition-all flex items-center shadow-md text-sm">
+                    <Phone size={16} className="mr-1.5" />
+                    Quick Call
+                  </button>
+                </div>
+              </div>
+              
+              {/* Intercity Travel Section */}
+              <div className="bg-white rounded-2xl shadow-lg p-4 text-gray-800 animate-fadeIn">
+                <h2 className="text-xl font-bold mb-1">Intercity Travel</h2>
+                <div className="flex space-x-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
+                    {isLoaded ? (
+                      <Autocomplete
+                        onLoad={autocomplete => (fromAutocompleteRef.current = autocomplete)}
+                        onPlaceChanged={handleFromPlaceChanged}
+                      >
+                        <input 
+                          type="text" 
+                          className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none transition-all"
+                          placeholder="Enter starting location"
+                        />
+                      </Autocomplete>
+                    ) : (
+                      <input 
+                        type="text" 
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none transition-all"
+                        placeholder="Loading..."
+                        disabled
+                      />
+                    )}
+                    {fromLocation && (
+                      <p className="text-xs text-green-600 mt-1">
+                        Location set: {fromLocation.lat.toFixed(4)}, {fromLocation.lng.toFixed(4)}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
+                    {isLoaded ? (
+                      <Autocomplete
+                        onLoad={autocomplete => (toAutocompleteRef.current = autocomplete)}
+                        onPlaceChanged={handleToPlaceChanged}
+                      >
+                        <input 
+                          type="text" 
+                          className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none transition-all"
+                          placeholder="Enter destination"
+                        />
+                      </Autocomplete>
+                    ) : (
+                      <input 
+                        type="text" 
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none transition-all"
+                        placeholder="Loading..."
+                        disabled
+                      />
+                    )}
+                    {toLocation && (
+                      <p className="text-xs text-green-600 mt-1">
+                        Location set: {toLocation.lat.toFixed(4)}, {toLocation.lng.toFixed(4)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex space-x-3 pt-2 mt-4">
+                  <button 
+                    onClick={handleIntercityTravel}
+                    className={`flex-1 ${fromLocation && toLocation 
+                      ? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700' 
+                      : 'bg-gray-400 cursor-not-allowed'} text-white px-4 py-3 rounded-lg transition-all shadow-md font-medium flex items-center justify-center`}
+                    disabled={!isLoaded || !fromLocation || !toLocation}
+                  >
+                    <Navigation size={18} className="mr-2" />
+                    Start Travel
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setIntercityTravel(false);
+                      setFromLocation(null);
+                      setToLocation(null);
+                    }}
+                    className="flex-1 bg-gray-200 px-4 py-3 rounded-lg hover:bg-gray-300 transition-all font-medium"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+
+              {/* Enhanced Map Container with pointer markers only (no circles) */}
+              <div className="flex-grow bg-white rounded-2xl shadow-lg overflow-hidden relative" style={{ minHeight: "70vh" }}>
+                {isLoaded ? (
+                  <GoogleMap
+                    mapContainerStyle={mapContainerStyle}
+                    center={currentLocation}
+                    zoom={mapZoomLevel}
+                    onLoad={handleMapLoad}
+                    options={{
+                      styles: getMapStyle('day'), // Always use day style
+                      streetViewControl: false, // Disabled for cleaner UI
+                      mapTypeControl: false,
+                      fullscreenControl: false, // Disabled for cleaner UI
+                      zoomControl: false, // We'll use custom controls
+                      rotateControl: false, // Disabled for cleaner UI
+                      mapTypeId: 'roadmap',
+                      mapId: "8e0a97af9386fef",
+                      disableDefaultUI: false,
+                      clickableIcons: true,
+                      gestureHandling: "greedy",
+                    }}
+                    onClick={() => setSelectedZone(null)} // Close info window when clicking map
+                  >
+                    {/* Current Location Marker - Enhanced visibility */}
+                    <Marker
+                      position={currentLocation}
+                      icon={createLocationMarkerIcon()}
+                      onLoad={marker => {
+                        locationMarkerRef.current = marker;
+                        console.log("Marker loaded:", marker);
+                      }}
+                      zIndex={1000} // Ensure location marker is always on top
+                      animation={window.google?.maps?.Animation?.DROP}
+                    />
+                    
+                    {/* Removed all circle elements */}
+                    
+                    {/* Destination Marker */}
+                    {destination && (
+                      <Marker
+                        position={destination}
+                        icon={createDestinationMarker()}
+                        animation={google.maps.Animation.DROP}
+                      />
+                    )}
+                    
+                    {/* Danger Zones - Now using only pointer markers, no circles */}
+                    {dangerZones.map(zone => (
+                      <React.Fragment key={zone.id}>
+                        {/* Primary Marker */}
                         <Marker
-                          position={userLocation}
-                          icon={userLocationPulse}
-                          animation={google.maps.Animation.BOUNCE}
-                          zIndex={1000}
+                          position={{ lat: zone.lat, lng: zone.lng }}
+                          icon={createDangerMarker(zone.riskLevel)}
+                          onClick={() => handleMarkerClick(zone)}
+                          title={zone.name}
                         />
                         
-                        {/* User location accuracy circle */}
-                        <Circle
-                          center={userLocation}
-                          options={userLocationCircleOptions}
-                        />
-                        
-                        {/* User direction indicator */}
-                        <Marker
-                          position={userLocation}
-                          icon={{
-                            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                            fillColor: '#3B82F6',
-                            fillOpacity: 0.9,
-                            strokeColor: '#FFFFFF',
-                            strokeWeight: 2,
-                            scale: 6,
-                            rotation: 45 // This would ideally come from device orientation
-                          }}
-                          zIndex={1001}
-                        />
-                      </>
-                    )}
-
-                    {/* Safety Zone Circles */}
-                    {showSafetyZones && safetyZones.map((zone, index) => {
-                      const colors = getSafetyZoneColor(zone.level);
-                      return (
-                        <Circle
-                          key={`safety-zone-${index}`}
-                          center={zone.location}
-                          options={{
-                            strokeColor: colors.stroke,
-                            strokeOpacity: 0.8,
-                            strokeWeight: 2,
-                            fillColor: colors.fill,
-                            fillOpacity: 0.15,
-                            clickable: true,
-                            zIndex: 100
-                          }}
-                          onClick={() => {
-                            // Show zone info in a modal or info window
-                            alert(`${zone.name}: ${zone.description || 'No additional information available.'}`);
-                          }}
-                        />
-                      );
-                    })}
-                    
-                    {/* Safe Points Markers with Custom Icons */}
-                    {safePoints.map((point, index) => (
-                      <Marker
-                        key={`safe-point-${index}`}
-                        position={point.location}
-                        icon={getMarkerIconForType(point.type)}
-                        onClick={() => setSelectedLocation(index)}
-                      />
-                    ))}
-                    
-                    {/* Safe Zones Markers */}
-                    {safeZones.map((zone, index) => (
-                      <Marker
-                        key={`safe-zone-${index}`}
-                        position={zone.location}
-                        icon={getMarkerIconForType('safe_zone')}
-                        onClick={() => setSelectedLocation(index + safePoints.length)}
-                      />
-                    ))}
-
-                    {/* Enhanced Info Window for Safe Points */}
-                    {selectedLocation !== null && safePoints.length > 0 && selectedLocation < safePoints.length && (
-                      <InfoWindow
-                        position={safePoints[selectedLocation].location}
-                        onCloseClick={() => setSelectedLocation(null)}
-                      >
-                        <div className="p-2 max-w-xs">
-                          <h3 className="font-semibold text-gray-900">{safePoints[selectedLocation].name}</h3>
-                          {safePoints[selectedLocation].vicinity && (
-                            <p className="text-xs text-gray-600 mt-1">{safePoints[selectedLocation].vicinity}</p>
-                          )}
-                          <div className="flex items-center justify-between mt-2">
-                            <span className="text-xs capitalize bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                              {safePoints[selectedLocation].type.replace('_', ' ')}
-                            </span>
-                            {safePoints[selectedLocation].distance && (
-                              <span className="text-xs text-gray-600">
-                                {safePoints[selectedLocation].distance}
-                              </span>
-                            )}
-                          </div>
-                          {safePoints[selectedLocation].isOpen !== undefined && (
-                            <p className={`text-xs mt-1 ${safePoints[selectedLocation].isOpen ? "text-green-600" : "text-red-600"}`}>
-                              {safePoints[selectedLocation].isOpen ? "Open now" : "Closed"}
-                            </p>
-                          )}
-                          {safePoints[selectedLocation].phone && (
-                            <p className="text-xs mt-1 text-blue-600">{safePoints[selectedLocation].phone}</p>
-                          )}
-                          {safePoints[selectedLocation].photos && safePoints[selectedLocation].photos.length > 0 && (
-                            <img 
-                              src={safePoints[selectedLocation].photos[0]} 
-                              alt={safePoints[selectedLocation].name}
-                              className="w-full h-24 object-cover rounded mt-2"
-                            />
-                          )}
-                          <div className="flex justify-between mt-3">
-                            <button
-                              className="text-xs bg-green-600 text-white px-2 py-1 rounded"
-                              onClick={() => {
-                                if (directionsServiceRef.current && userLocation) {
-                                  directionsServiceRef.current.route(
-                                    {
-                                      origin: userLocation,
-                                      destination: safePoints[selectedLocation].location,
-                                      travelMode: google.maps.TravelMode.WALKING
-                                    },
-                                    (result, status) => {
-                                      if (status === google.maps.DirectionsStatus.OK) {
-                                        setDirectionsResponse(result);
-                                        setSelectedLocation(null);
-                                      }
-                                    }
-                                  );
-                                }
-                              }}
-                            >
-                              Navigate Here
-                            </button>
-                            
-                            <a 
-                              href={`tel:${safePoints[selectedLocation].phone || "911"}`}
-                              className="text-xs bg-blue-600 text-white px-2 py-1 rounded ml-2"
-                            >
-                              Call
-                            </a>
-                          </div>
-                        </div>
-                      </InfoWindow>
-                    )}
-
-                    {/* Enhanced Info Window for Safe Zones */}
-                    {selectedLocation !== null && safePoints.length > 0 && selectedLocation >= safePoints.length && 
-                     selectedLocation - safePoints.length < safeZones.length && (
-                      <InfoWindow
-                        position={safeZones[selectedLocation - safePoints.length].location}
-                        onCloseClick={() => setSelectedLocation(null)}
-                      >
-                        <div className="p-2 max-w-xs">
-                          <h3 className="font-semibold text-gray-900">
-                            {safeZones[selectedLocation - safePoints.length].name}
-                          </h3>
-                          <p className="text-xs text-gray-600 mt-1">
-                            {safeZones[selectedLocation - safePoints.length].description}
-                          </p>
-                          <div className="flex items-center mt-2">
-                            <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">
-                              Safe Zone
-                            </span>
-                            {safeZones[selectedLocation - safePoints.length].crowdLevel && (
-                              <span className={`text-xs ml-2 px-2 py-0.5 rounded-full ${
-                                safeZones[selectedLocation - safePoints.length].crowdLevel === 'high'
-                                  ? "bg-green-100 text-green-800"
-                                  : safeZones[selectedLocation - safePoints.length].crowdLevel === 'medium'
-                                    ? "bg-yellow-100 text-yellow-800"
-                                    : "bg-red-100 text-red-800"
-                              }`}>
-                                {safeZones[selectedLocation - safePoints.length].crowdLevel} crowd
-                              </span>
-                            )}
-                          </div>
-                          <button
-                            className="text-xs bg-green-600 text-white px-2 py-1 rounded mt-3"
-                            onClick={() => {
-                              if (directionsServiceRef.current && userLocation) {
-                                directionsServiceRef.current.route(
-                                  {
-                                    origin: userLocation,
-                                    destination: safeZones[selectedLocation - safePoints.length].location,
-                                    travelMode: google.maps.TravelMode.WALKING
-                                  },
-                                  (result, status) => {
-                                    if (status === google.maps.DirectionsStatus.OK) {
-                                      setDirectionsResponse(result);
-                                      setSelectedLocation(null);
-                                    }
-                                  }
-                                );
-                              }
-                            }}
+                        {/* Info Window showing when marker is clicked */}
+                        {selectedZone?.id === zone.id && (
+                          <InfoWindow
+                            position={{ lat: zone.lat, lng: zone.lng }}
+                            onCloseClick={() => setSelectedZone(null)}
                           >
-                            Navigate to Safe Zone
-                          </button>
-                        </div>
-                      </InfoWindow>
-                    )}
-
-                    {directionsResponse && (
-                      <DirectionsRenderer
-                        directions={directionsResponse}
+                            <div className="p-1">
+                              <h3 className="font-bold text-sm">{zone.name}</h3>
+                              <p className="text-xs text-gray-600 capitalize">{zone.riskLevel} Risk Area</p>
+                              <p className="text-xs text-gray-600">Radius: {zone.radius}m</p>
+                            </div>
+                          </InfoWindow>
+                        )}
+                      </React.Fragment>
+                    ))}
+                    
+                    {/* Directions */}
+                    {destination && currentLocation && mapLoaded && (
+                      <DirectionsService
                         options={{
-                          suppressMarkers: true,
+                          destination: destination,
+                          origin: currentLocation,
+                          travelMode: google.maps.TravelMode.DRIVING // Changed to DRIVING for intercity travel
+                        }}
+                        callback={directionsCallback}
+                      />
+                    )}
+                    
+                    {directions && (
+                      <DirectionsRenderer
+                        options={{
+                          directions: directions,
+                          markerOptions: { 
+                            visible: false, // Hide default markers and use our custom ones
+                          },
                           polylineOptions: {
-                            strokeColor: '#6366F1',
-                            strokeWeight: 6,
+                            strokeColor: '#6D28D9',
+                            strokeWeight: 5,
                             strokeOpacity: 0.7
                           }
                         }}
                       />
                     )}
                   </GoogleMap>
-                  
-                  {/* Center on user location button */}
+                ) : loadError ? (
+                  <div className="h-full w-full flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="text-red-500 mb-4">
+                        <AlertTriangle size={48} className="mx-auto" />
+                      </div>
+                      <p className="text-red-600 font-medium">Failed to load Google Maps</p>
+                      <p className="text-gray-600 mt-2">{loadError.message}</p>
+                      <button 
+                        onClick={() => window.location.reload()}
+                        className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="w-12 h-12 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                      <p className="text-gray-600">Loading Google Maps...</p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Location Permission Prompt */}
+                {showPermissionPrompt && (
+                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white p-6 rounded-xl shadow-2xl max-w-md w-full z-20">
+                    <div className="flex items-center justify-center mb-4">
+                      <AlertTriangle size={48} className="text-yellow-500" />
+                    </div>
+                    <h3 className="text-xl font-bold text-center mb-3">Location Access Required</h3>
+                    <p className="text-gray-600 mb-6 text-center">
+                      This app needs access to your location to provide safety features and real-time tracking.
+                    </p>
+                    <div className="flex space-x-4">
+                      <button
+                        onClick={() => setShowPermissionPrompt(false)}
+                        className="flex-1 py-2 px-4 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium transition-all"
+                      >
+                        Not Now
+                      </button>
+                      <button
+                        onClick={handleRequestPermission}
+                        className="flex-1 py-2 px-4 bg-blue-500 text-white hover:bg-blue-600 rounded-lg font-medium transition-all"
+                      >
+                        Allow Location
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Location error indicator with retry button */}
+                {locationError && !showPermissionPrompt && (
+                  <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded-lg flex items-center shadow-md max-w-sm">
+                    <AlertTriangle size={16} className="mr-2 flex-shrink-0" />
+                    <span className="text-sm flex-grow">{locationError}</span>
+                    <button 
+                      onClick={handleRefreshLocation}
+                      className="ml-2 p-1 bg-white rounded-full flex-shrink-0"
+                    >
+                      <Crosshair size={16} className="text-red-500" />
+                    </button>
+                  </div>
+                )}
+                
+                {/* Enhanced location tracking indicator - Moved to top-center for better visibility */}
+                {locationWatchActive && liveTracking && (
+                  <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center animate-pulse shadow-md z-10">
+                    <Compass size={16} className="mr-2" />
+                    <div>
+                      <span className="text-sm font-medium">Live Location Active</span>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Simplified Control Overlay - Only essential buttons */}
+                <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-white bg-opacity-90 rounded-full shadow-lg flex items-center px-2 py-1 space-x-1">
+                  {/* Live Location Button */}
                   <button 
-                    onClick={centerMapOnUser}
-                    className={`absolute bottom-4 right-4 p-3 rounded-full ${darkMode ? "bg-gray-800" : "bg-white"} shadow-lg z-10 hover:scale-110 transition-transform duration-200`}
-                    title="Center on my location"
+                    onClick={handleRefreshLocation}
+                    className="p-3 rounded-full hover:bg-blue-500 hover:text-white transition-all relative"
+                    title="Center on my live location"
                   >
-                    <Navigation className={`h-5 w-5 ${darkMode ? "text-pink-400" : "text-pink-600"}`} />
+                    <Crosshair size={20} />
+                    {isLocationRefreshing && (
+                      <span className="absolute inset-0 rounded-full border-2 border-blue-500 animate-ping opacity-75"></span>
+                    )}
                   </button>
                   
-                  {/* Emergency services loading indicator */}
-                  {emergencyServicesLoading && (
-                    <div className="absolute top-4 right-4 bg-white rounded-lg shadow-md px-3 py-2 flex items-center z-10">
-                      <div className="w-4 h-4 rounded-full border-2 border-pink-500 border-t-transparent animate-spin mr-2"></div>
-                      <span className="text-xs">Loading safety points...</span>
+                  {/* Toggle Live Tracking Button */}
+                  <button 
+                    onClick={toggleLiveTracking}
+                    className={`p-3 rounded-full transition-all ${liveTracking ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'}`}
+                    title={liveTracking ? "Disable live tracking" : "Enable live tracking"}
+                  >
+                    <Compass size={20} />
+                  </button>
+                </div>
+                
+                {/* Zoom controls remain the same */}
+                <div className="absolute top-1/2 right-4 transform -translate-y-1/2 bg-white bg-opacity-90 rounded-lg shadow-lg flex flex-col p-1">
+                  <button 
+                    onClick={() => {
+                      if (mapRef.current) {
+                        const currentZoom = mapRef.current.getZoom() || 16;
+                        mapRef.current.setZoom(currentZoom + 1);
+                        setMapZoomLevel(currentZoom + 1);
+                      }
+                    }}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-all"
+                    title="Zoom in"
+                  >
+                    <Plus size={18} />
+                  </button>
+                  <div className="border-t border-gray-200 my-1"></div>
+                  <button 
+                    onClick={() => {
+                      if (mapRef.current) {
+                        const currentZoom = mapRef.current.getZoom() || 16;
+                        mapRef.current.setZoom(currentZoom - 1);
+                        setMapZoomLevel(currentZoom - 1);
+                      }
+                    }}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-all"
+                    title="Zoom out"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                
+                {/* Quick action button - Bottom right for panic mode */}
+                <div className="absolute bottom-24 right-4">
+                  <button 
+                    onClick={panicMode ? cancelPanicMode : activatePanicMode}
+                    className={`p-4 rounded-full shadow-lg transition-all ${panicMode ? 'bg-red-500 text-white animate-pulse' : 'bg-red-500 text-white hover:bg-red-600'}`}
+                    title={panicMode ? "Cancel panic mode" : "Activate panic mode"}
+                  >
+                    <AlertOctagon size={24} />
+                  </button>
+                </div>
+                
+                {/* Panic Mode Overlay */}
+                {panicMode && (
+                  <div className="absolute top-0 left-0 w-full h-full bg-red-500 bg-opacity-20 flex items-center justify-center z-10">
+                    <div className="bg-white p-6 rounded-xl shadow-2xl max-w-md w-full">
+                      <div className="flex items-center justify-center mb-4">
+                        <AlertOctagon size={48} className="text-red-500" />
+                      </div>
+                      <h3 className="text-2xl font-bold text-center mb-2">Panic Mode Activated</h3>
+                      
+                      {panicCountdown !== null ? (
+                        <>
+                          <p className="text-center mb-4">
+                            Alerting your emergency contacts in <span className="text-red-500 font-bold">{panicCountdown}</span> seconds
+                          </p>
+                          <div className="w-full bg-gray-200 rounded-full h-2.5 mb-6">
+                            <div 
+                              className="bg-red-500 h-2.5 rounded-full" 
+                              style={{ width: `${((10 - panicCountdown) / 10) * 100}%` }}
+                            ></div>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-center mb-4 text-red-500 font-medium">
+                          Emergency contacts have been notified with your location
+                        </p>
+                      )}
+                      
+                      <div className="flex space-x-4">
+                        <button
+                          onClick={cancelPanicMode}
+                          className="flex-1 py-3 px-4 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium transition-all"
+                        >
+                          Cancel
+                        </button>
+                        {panicCountdown === null && (
+                          <button
+                            onClick={sendPanicAlerts}
+                            className="flex-1 py-3 px-4 bg-red-500 text-white hover:bg-red-600 rounded-lg font-medium transition-all flex items-center justify-center"
+                          >
+                            <Phone size={18} className="mr-2" />
+                            Send Again
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </>
-              ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center">
-                  <div className="w-12 h-12 rounded-full border-4 border-pink-200 border-t-pink-600 animate-spin mb-4"></div>
-                  {loadError && <p className="text-red-500">Error loading maps: {loadError.message}</p>}
-                </div>
-              )}
-
-              {routeDisplayed === "loading" && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-20">
-                  <div className="w-12 h-12 rounded-full border-4 border-pink-200 border-t-pink-600 animate-spin"></div>
-                </div>
-              )}
-            </div>
-            
-            {/* Safety statistics panel */}
-            <div className={`p-4 border-t ${darkMode ? "border-gray-700" : "border-gray-200"}`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center">
-                    <h3 className="text-sm font-medium">Safety Status:</h3>
-                    <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
-                      userSafetyStatus.status === 'safe' 
-                        ? 'bg-green-100 text-green-800' 
-                        : userSafetyStatus.status === 'caution'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : userSafetyStatus.status === 'danger' 
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {userSafetyStatus.status === 'safe' 
-                        ? 'Safe Area' 
-                        : userSafetyStatus.status === 'caution'
-                          ? 'Exercise Caution'
-                          : userSafetyStatus.status === 'danger' 
-                            ? 'High Risk Area'
-                            : 'Analyzing Area...'}
-                    </span>
                   </div>
-                  <h3 className="text-sm font-medium">Nearby Safety Resources</h3>
-                  <div className="flex items-center mt-1 space-x-3">
-                    {[
-                      { type: 'police', label: 'Police' },
-                      { type: 'hospital', label: 'Medical' },
-                      { type: 'transit_station', label: 'Transit' }
-                    ].map(item => {
-                      const count = safePoints.filter(point => point.type === item.type).length;
-                      return (
-                        <div key={item.type} className="flex items-center text-xs">
-                          <span className={`inline-block w-2 h-2 rounded-full mr-1 ${
-                            count > 0 ? "bg-green-500" : "bg-red-500"
-                          }`}></span>
-                          <span>{item.label}: {count}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                )}
                 
-                <button
-                  onClick={fetchNearbyPlaces}
-                  className={`px-3 py-1.5 text-xs rounded-lg ${darkMode ? "bg-blue-700 hover:bg-blue-600" : "bg-blue-100 hover:bg-blue-200"} text-blue-700 transition-colors flex items-center`}
-                  disabled={emergencyServicesLoading}
-                >
-                  {emergencyServicesLoading ? (
-                    <>
-                      <div className="w-3 h-3 rounded-full border-2 border-blue-400 border-t-transparent animate-spin mr-1"></div>
-                      Refreshing...
-                    </>
-                  ) : (
-                    <>Refresh Safety Points</>
-                  )}
-                </button>
-              </div>
-            </div>
-            
-            {/* Route actions */}
-            {userLocation && (
-              <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div className={`h-2.5 w-2.5 rounded-full bg-green-500 mr-2 animate-pulse`}></div>
-                    <span className="text-sm">
-                      Live Location Active
-                    </span>
-                  </div>
-                  
-                  {fromAddress === "" && userAddress && (
-                    <button
-                      onClick={() => setFromAddress(userAddress)}
-                      className={`text-xs px-3 py-1.5 rounded-lg ${darkMode ? "bg-pink-900/50 hover:bg-pink-900" : "bg-pink-100 hover:bg-pink-200"} text-pink-700 transition-colors`}
-                    >
-                      Use Current Location as Start
-                    </button>
-                  )}
+                {/* Debug information overlay - Made more compact and positioned at bottom-left */}
+                <div className="absolute bottom-4 left-4 bg-white bg-opacity-80 text-xs p-2 rounded shadow">
+                  <p className="flex items-center">
+                    <span className="w-3 h-3 rounded-full bg-blue-500 inline-block mr-1"></span>
+                    {currentLocation.lat.toFixed(6)}, {currentLocation.lng.toFixed(6)}
+                  </p>
                 </div>
-              </div>
-            )}
-            
-            {routeDisplayed === true && (
-              <div className="p-4 flex justify-between">
-                <button
-                  onClick={() => {
-                    setDirectionsResponse(null);
-                    setDistance("");
-                    setDuration("");
-                    setRouteDisplayed(false);
-                    setRoutePoints([]);
-                  }}
-                  className={`px-3 py-1 text-sm rounded-lg ${darkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-200 hover:bg-gray-300"} transition-colors`}
-                >
-                  Clear Route
-                </button>
-                
-                <button
-                  onClick={() => setSaveRouteModal(true)}
-                  className="px-3 py-1 text-sm rounded-lg bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
-                >
-                  Save as Safe Route
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Input Section with Floating Labels and Animations */}
-          <div className={`${darkMode ? "bg-gray-800" : "bg-white"} rounded-2xl shadow-xl p-6 transform transition-all duration-300 hover:shadow-2xl`}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="relative group">
-                <div className={`absolute top-0 left-0 w-full h-full ${darkMode ? "bg-gray-700" : "bg-gray-100"} rounded-lg -z-10 transform group-focus-within:scale-105 transition-transform duration-300`}></div>
-                <input
-                  type="text"
-                  id="from"
-                  className={`w-full p-4 pb-2 pt-6 rounded-lg border ${darkMode ? "border-gray-600 bg-gray-700 focus:bg-gray-700" : "border-gray-300 bg-white focus:bg-white"} focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all duration-300`}
-                  placeholder=" "
-                  value={fromAddress}
-                  onChange={(e) => setFromAddress(e.target.value)}
-                />
-                <label 
-                  htmlFor="from"
-                  className={`absolute text-sm left-4 transition-all duration-200 ${
-                    fromAddress ? "top-2 text-pink-600 text-xs" : "top-4 text-gray-500"
-                  } peer-focus:top-2 peer-focus:text-pink-600 peer-focus:text-xs`}
-                >
-                  From Address
-                </label>
-                <MapPin className="absolute right-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
               </div>
               
-              <div className="relative group">
-                <div className={`absolute top-0 left-0 w-full h-full ${darkMode ? "bg-gray-700" : "bg-gray-100"} rounded-lg -z-10 transform group-focus-within:scale-105 transition-transform duration-300`}></div>
-                <input
-                  type="text"
-                  id="to"
-                  className={`w-full p-4 pb-2 pt-6 rounded-lg border ${darkMode ? "border-gray-600 bg-gray-700 focus:bg-gray-700" : "border-gray-300 bg-white focus:bg-white"} focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all duration-300`}
-                  placeholder=" "
-                  value={toAddress}
-                  onChange={(e) => setToAddress(e.target.value)}
-                />
-                <label 
-                  htmlFor="to"
-                  className={`absolute text-sm left-4 transition-all duration-200 ${
-                    toAddress ? "top-2 text-pink-600 text-xs" : "top-4 text-gray-500"
-                  } peer-focus:top-2 peer-focus:text-pink-600 peer-focus:text-xs`}
-                >
-                  To Destination
-                </label>
-                <MapPin className="absolute right-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              {/* Quick Access - Make it smaller or optionally collapse/hide on smaller screens */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                <div className="bg-white rounded-xl shadow-lg p-4 border-l-4 border-purple-500 hover:shadow-xl transition-all">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-bold text-gray-800">Emergency Contacts</h3>
+                    <div className="p-1.5 bg-purple-100 rounded-lg text-purple-600">
+                      <Phone size={14} />
+                    </div>
+                  </div>
+                  <ul className="space-y-2">
+                    {emergencyContacts.slice(0, 2).map(contact => (
+                      <li key={contact.id} className="flex justify-between items-center p-1.5 hover:bg-gray-50 rounded-lg transition-all">
+                        <div className="flex items-center">
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-r from-indigo-400 to-purple-400 flex items-center justify-center text-white font-medium mr-2 text-xs">
+                            {contact.name.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="font-medium text-sm">{contact.name}</div>
+                            <div className="text-xs text-gray-500">{contact.relation}</div>
+                          </div>
+                        </div>
+                        <button className="p-1.5 text-green-600 hover:bg-green-100 rounded-full transition-all">
+                          <Phone size={14} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <button 
+                    onClick={() => { setCurrentTab('contacts'); }}
+                    className="w-full mt-2 px-3 py-1.5 text-xs text-center text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-all"
+                  >
+                    View All
+                  </button>
+                </div>
+                <div className="bg-white rounded-xl shadow-lg p-4 border-l-4 border-orange-500 hover:shadow-xl transition-all">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-bold text-gray-800">Nearby Danger Zones</h3>
+                    <div className="p-1.5 bg-orange-100 rounded-lg text-orange-600">
+                      <AlertTriangle size={14} />
+                    </div>
+                  </div>
+                  <ul className="space-y-2">
+                    {dangerZones.slice(0, 2).map(zone => (
+                      <li key={zone.id} className="flex items-center p-1.5 hover:bg-gray-50 rounded-lg transition-all">
+                        <div 
+                          className="w-2 h-2 rounded-full mr-2" 
+                          style={{ backgroundColor: getDangerZoneColor(zone.riskLevel) }}
+                        ></div>
+                        <div>
+                          <div className="font-medium text-sm">{zone.name}</div>
+                          <div className="text-xs text-gray-500 capitalize">{zone.riskLevel} Risk</div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  <button 
+                    onClick={() => { setCurrentTab('danger-zones'); }}
+                    className="w-full mt-2 px-3 py-1.5 text-xs text-center text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-all"
+                  >
+                    View All
+                  </button>
+                </div>
               </div>
             </div>
-            
-            <div className="flex justify-end mt-6">
-              <button
-                onClick={calculateRoute}
-                className={`${darkMode ? "bg-gradient-to-r from-pink-600 to-purple-700" : "bg-gradient-to-r from-pink-500 to-purple-600"} text-white font-medium py-3 px-6 rounded-xl flex items-center shadow-lg transform transition-all duration-300 hover:scale-105 hover:shadow-pink-500/25`}
-              >
-                <Navigation className="h-5 w-5 mr-2" />
-                Show Safe Route
-              </button>
-            </div>
-          </div>
-          
-          {/* Saved Routes Panel */}
-          {savedRoutes.length > 0 && (
-            <SavedRoutesPanel
-              routes={savedRoutes}
-              darkMode={darkMode}
-              onSelectRoute={handleSelectRoute}
-              onFavoriteToggle={handleToggleFavorite}
-              onDeleteRoute={handleDeleteRoute}
-            />
           )}
           
-          {/* Emergency Contacts Section */}
-          <ContactsList
-            contacts={contacts}
-            onAdd={addContact}
-            onDelete={deleteContact}
-            darkMode={darkMode}
-          />
+          {currentTab === 'contacts' && (
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800">Emergency Contacts</h2>
+                  <p className="text-gray-500">Manage your trusted contacts for emergencies</p>
+                </div>
+                <button 
+                  onClick={() => setShowContactForm(true)}
+                  className="p-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all shadow-md"
+                >
+                  <Plus size={20} />
+                </button>
+              </div>
+              {showContactForm && (
+                <div className="mb-6 p-6 border rounded-xl bg-purple-50 border-purple-200 animate-fadeIn">
+                  <h3 className="font-bold mb-4 text-purple-800">Add New Emergency Contact</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                      <input 
+                        type="text" 
+                        value={newContact.name}
+                        onChange={(e) => setNewContact({...newContact, name: e.target.value})}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none transition-all"
+                        placeholder="Enter contact name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                      <input 
+                        type="text" 
+                        value={newContact.phone}
+                        onChange={(e) => setNewContact({...newContact, phone: e.target.value})}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none transition-all"
+                        placeholder="Enter phone number"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Relationship</label>
+                      <input 
+                        type="text" 
+                        value={newContact.relation}
+                        onChange={(e) => setNewContact({...newContact, relation: e.target.value})}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-transparent outline-none transition-all"
+                        placeholder="Family, Friend, etc."
+                      />
+                    </div>
+                    <div className="flex space-x-3 pt-2">
+                      <button 
+                        onClick={addNewContact}
+                        className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-4 py-3 rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all shadow-md font-medium"
+                      >
+                        Add Contact
+                      </button>
+                      <button 
+                        onClick={() => setShowContactForm(false)}
+                        className="flex-1 bg-gray-200 px-4 py-3 rounded-lg hover:bg-gray-300 transition-all font-medium"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {emergencyContacts.map(contact => (
+                  <div key={contact.id} className="p-4 border border-gray-200 rounded-xl hover:border-purple-200 hover:shadow-md transition-all">
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-r from-indigo-400 to-purple-400 flex items-center justify-center text-white font-bold text-xl mr-4">
+                          {contact.name.charAt(0)}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-gray-800">{contact.name}</h3>
+                          <p className="text-sm text-gray-500">{contact.relation}</p>
+                          <p className="text-sm font-medium text-gray-700 mt-1">{contact.phone}</p>
+                        </div>
+                      </div>
+                      <div className="flex space-x-1">
+                        <button className="p-2 text-green-600 hover:bg-green-100 rounded-full transition-all">
+                          <Phone size={18} />
+                        </button>
+                        <button 
+                          onClick={() => removeContact(contact.id)}
+                          className="p-2 text-red-600 hover:bg-red-100 rounded-full transition-all"
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           
-          {/* SOS Button */}
-          <div className="fixed bottom-6 right-6 z-30">
-            <button
-              id="sos-button"
-              onClick={handleSOS}
-              className={`w-16 h-16 md:w-20 md:h-20 rounded-full ${darkMode ? "bg-red-600" : "bg-red-500"} text-white font-bold flex items-center justify-center shadow-lg transform transition-all duration-300 hover:scale-110 animate-pulse hover:animate-none`}
-              style={{ boxShadow: "0 0 0 rgba(255, 99, 71, 0.4), 0 0 20px rgba(255, 99, 71, 0.4)" }}
-            >
-              <AlertCircle className="h-8 w-8 md:h-10 md:w-10" />
-              <span className="sr-only">Emergency SOS</span>
-            </button>
-          </div>
-       </div>
+          {currentTab === 'danger-zones' && (
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800">Danger Zones</h2>
+                  <p className="text-gray-500">Areas to avoid for your safety</p>
+                </div>
+                <button 
+                  onClick={() => setShowZoneForm(true)}
+                  className="p-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-full hover:from-orange-600 hover:to-red-600 transition-all shadow-md"
+                >
+                  <Plus size={20} />
+                </button>
+              </div>
+              {showZoneForm && (
+                <div className="mb-6 p-6 border rounded-xl bg-orange-50 border-orange-200 animate-fadeIn">
+                  <h3 className="font-bold mb-4 text-orange-800">Add New Danger Zone</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Zone Name</label>
+                      <input 
+                        type="text" 
+                        value={newZone.name}
+                        onChange={(e) => setNewZone({...newZone, name: e.target.value})}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none transition-all"
+                        placeholder="Enter zone name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Radius (meters)</label>
+                      <input 
+                        type="number" 
+                        value={newZone.radius}
+                        onChange={(e) => setNewZone({...newZone, radius: parseInt(e.target.value)})}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none transition-all"
+                        placeholder="Enter radius"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+                      <input 
+                        type="number" 
+                        value={newZone.lat}
+                        onChange={(e) => setNewZone({...newZone, lat: parseFloat(e.target.value)})}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none transition-all"
+                        placeholder="Enter latitude"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+                      <input 
+                        type="number" 
+                        value={newZone.lng}
+                        onChange={(e) => setNewZone({...newZone, lng: parseFloat(e.target.value)})}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none transition-all"
+                        placeholder="Enter longitude"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Risk Level</label>
+                      <select 
+                        value={newZone.riskLevel}
+                        onChange={(e) => setNewZone({...newZone, riskLevel: e.target.value as 'high' | 'medium' | 'low'})}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none transition-all"
+                      >
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                      </select>
+                    </div>
+                    <div className="flex space-x-3 pt-2">
+                      <button 
+                        onClick={addNewDangerZone}
+                        className="flex-1 bg-gradient-to-r from-orange-500 to-red-500 text-white px-4 py-3 rounded-lg hover:from-orange-600 hover:to-red-600 transition-all shadow-md font-medium"
+                      >
+                        Add Zone
+                      </button>
+                      <button 
+                        onClick={() => setShowZoneForm(false)}
+                        className="flex-1 bg-gray-200 px-4 py-3 rounded-lg hover:bg-gray-300 transition-all font-medium"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {dangerZones.map(zone => (
+                  <div key={zone.id} className="p-4 border border-gray-200 rounded-xl hover:border-orange-200 hover:shadow-md transition-all">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-bold text-gray-800">{zone.name}</h3>
+                        <p className="text-sm text-gray-500 capitalize">{zone.riskLevel} Risk Level</p>
+                        <p className="text-sm font-medium text-gray-700 mt-1">Radius: {zone.radius} meters</p>
+                        <p className="text-sm font-medium text-gray-700 mt-1">Lat: {zone.lat}, Lng: {zone.lng}</p>
+                      </div>
+                      <div className="flex space-x-1">
+                        <button 
+                          onClick={() => removeDangerZone(zone.id)}
+                          className="p-2 text-red-600 hover:bg-red-100 rounded-full transition-all"
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </main>
       </div>
-      
-      {/* Save Route Modal */}
-      <SaveRouteModal
-        isOpen={saveRouteModal}
-        onClose={() => setSaveRouteModal(false)}
-        onSave={handleSaveRoute}
-        darkMode={darkMode}
-        fromAddress={fromAddress}
-        toAddress={toAddress}
-      />
     </div>
   );
 };
 
-export default Dashboard;
+export default SafetyDashboard;
